@@ -70,7 +70,7 @@ func run() error {
 
 	catalogSvc := catalog.New(datasetRepo, relationRepo, rawRepo,
 		cfg.Postgres.RawSchema, cfg.Ingest, cfg.Query, log)
-	ingestSvc := ingest.New(datasetRepo, rawRepo, catalogSvc, cfg.Ingest, log)
+	ingestSvc := ingest.New(datasetRepo, rawRepo, catalogSvc, cfg.Postgres.RawSchema, cfg.Ingest, log)
 	dashboardSvc := dashboard.New(dashboardRepo, catalogSvc, rawRepo, cfg.Query, log)
 	agentSvc := agent.New(catalogSvc, rawRepo, sessionRepo, dashboardSvc, model, cfg.Query, log)
 	chatSvc := chat.New(sessionRepo, agentSvc, log)

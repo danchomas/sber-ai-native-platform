@@ -6,6 +6,29 @@ import (
 	"github.com/google/uuid"
 )
 
+type SourceRepository interface {
+	Create(ctx context.Context, s *Source) error
+	Update(ctx context.Context, s *Source) error
+	Get(ctx context.Context, id uuid.UUID) (*Source, error)
+	GetByName(ctx context.Context, name string) (*Source, error)
+	List(ctx context.Context) ([]Source, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type SourceIntrospector interface {
+	Ping(ctx context.Context, s *Source) error
+	Tables(ctx context.Context, s *Source) ([]ExternalTable, error)
+	Columns(ctx context.Context, s *Source, schema, table string) ([]Column, error)
+}
+
+type ExternalTable struct {
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	EstimateRows int64  `json:"estimate_rows"`
+	Attached     bool   `json:"attached"`
+}
+
 type DatasetRepository interface {
 	Create(ctx context.Context, d *Dataset) error
 	Update(ctx context.Context, d *Dataset) error
