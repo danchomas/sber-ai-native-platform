@@ -1,0 +1,301 @@
+package sqlguard
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/heinousness/aibi/internal/domain"
+)
+
+var forbiddenKeywords = map[string]string{
+	"INSERT": "изменение данных", "UPDATE": "изменение данных",
+	"DELETE": "удаление данных", "TRUNCATE": "удаление данных",
+	"MERGE": "изменение данных", "UPSERT": "изменение данных",
+	"DROP": "изменение схемы", "ALTER": "изменение схемы",
+	"CREATE": "изменение схемы", "COMMENT": "изменение схемы",
+	"REFRESH": "изменение схемы", "REINDEX": "обслуживание БД",
+	"VACUUM": "обслуживание БД", "ANALYZE": "обслуживание БД",
+	"CLUSTER": "обслуживание БД", "LOCK": "блокировка таблиц",
+	"GRANT": "управление доступом", "REVOKE": "управление доступом",
+	"SET": "изменение параметров сессии", "RESET": "изменение параметров сессии",
+	"DISCARD": "изменение параметров сессии", "LOAD": "загрузка модулей",
+	"COPY": "ввод-вывод файлов", "IMPORT": "ввод-вывод файлов",
+	"CALL": "вызов процедуры", "DO": "выполнение кода",
+	"EXECUTE": "динамический SQL", "PREPARE": "динамический SQL",
+	"DEALLOCATE": "динамический SQL", "DECLARE": "курсоры",
+	"FETCH": "курсоры", "MOVE": "курсоры", "CLOSE": "курсоры",
+	"LISTEN": "асинхронные уведомления", "NOTIFY": "асинхронные уведомления",
+	"UNLISTEN": "асинхронные уведомления",
+	"BEGIN":    "управление транзакцией", "COMMIT": "управление транзакцией",
+	"ROLLBACK": "управление транзакцией", "SAVEPOINT": "управление транзакцией",
+	"INTO": "создание таблиц через SELECT INTO",
+}
+
+var forbiddenFunctions = map[string]struct{}{
+	"pg_read_file": {}, "pg_read_binary_file": {}, "pg_ls_dir": {},
+	"pg_stat_file": {}, "pg_ls_logdir": {}, "pg_ls_waldir": {},
+	"lo_import": {}, "lo_export": {}, "lo_get": {}, "lo_put": {},
+	"dblink": {}, "dblink_connect": {}, "dblink_exec": {}, "postgres_fdw_handler": {},
+	"pg_sleep": {}, "pg_sleep_for": {}, "pg_sleep_until": {},
+	"pg_terminate_backend": {}, "pg_cancel_backend": {}, "pg_reload_conf": {},
+	"pg_rotate_logfile": {}, "set_config": {}, "current_setting": {},
+	"pg_logical_emit_message": {}, "query_to_xml": {}, "xmltable": {},
+	"pg_backup_start": {}, "pg_backup_stop": {}, "pg_switch_wal": {},
+}
+
+var forbiddenSchemas = map[string]struct{}{
+	"pg_catalog": {}, "information_schema": {}, "pg_toast": {}, "pg_temp": {},
+}
+
+type Policy struct {
+	Schema        string
+	AllowedTables map[string]struct{}
+	MaxRows       int
+	MaxLength     int
+	MaxJoins      int
+}
+
+func NewPolicy(schema string, tables []string, maxRows int) Policy {
+	allowed := make(map[string]struct{}, len(tables))
+	for _, t := range tables {
+		allowed[strings.ToLower(t)] = struct{}{}
+	}
+	return Policy{
+		Schema:        schema,
+		AllowedTables: allowed,
+		MaxRows:       maxRows,
+		MaxLength:     20_000,
+		MaxJoins:      10,
+	}
+}
+
+type Result struct {
+	SQL      string
+	Tables   []string
+	Warnings []string
+	Wrapped  bool
+}
+
+func Validate(raw string, p Policy) (Result, error) {
+	sql := strings.TrimSpace(raw)
+	sql = strings.TrimSuffix(sql, ";")
+	sql = strings.TrimSpace(sql)
+
+	if sql == "" {
+		return Result{}, reject("пустой запрос")
+	}
+	if p.MaxLength > 0 && len(sql) > p.MaxLength {
+		return Result{}, reject(fmt.Sprintf("запрос длиннее %d символов", p.MaxLength))
+	}
+
+	tokens, err := tokenize(sql)
+	if err != nil {
+		return Result{}, reject(err.Error())
+	}
+	if len(tokens) == 0 {
+		return Result{}, reject("запрос не содержит выражений")
+	}
+
+	if !tokens[0].isWord("SELECT") && !tokens[0].isWord("WITH") && !tokens[0].isWord("TABLE") {
+		return Result{}, reject("разрешены только запросы SELECT/WITH")
+	}
+
+	if err := checkStatements(tokens); err != nil {
+		return Result{}, err
+	}
+	if err := checkKeywords(tokens); err != nil {
+		return Result{}, err
+	}
+	if err := checkFunctions(tokens); err != nil {
+		return Result{}, err
+	}
+
+	res := Result{}
+	tables, warnings, err := checkRelations(tokens, p)
+	if err != nil {
+		return Result{}, err
+	}
+	res.Tables = tables
+	res.Warnings = warnings
+
+	if joins := countJoins(tokens); p.MaxJoins > 0 && joins > p.MaxJoins {
+		return Result{}, reject(fmt.Sprintf("слишком много соединений (%d, предел %d)", joins, p.MaxJoins))
+	}
+
+	res.SQL = sql
+	if p.MaxRows > 0 && !hasTopLevelLimit(tokens) {
+		res.SQL = fmt.Sprintf("SELECT * FROM (\n%s\n) AS aibi_guarded LIMIT %d", sql, p.MaxRows)
+		res.Wrapped = true
+		res.Warnings = append(res.Warnings,
+			fmt.Sprintf("Результат ограничен %d строками.", p.MaxRows))
+	}
+	return res, nil
+}
+
+func checkStatements(tokens []token) error {
+	for _, t := range tokens {
+		if t.isPunct(";") {
+			return reject("в одном запросе допускается только одна инструкция")
+		}
+	}
+	return nil
+}
+
+func checkKeywords(tokens []token) error {
+	for i, t := range tokens {
+		if t.kind != tokWord {
+			continue
+		}
+		up := t.upper()
+		reason, forbidden := forbiddenKeywords[up]
+		if !forbidden {
+			continue
+		}
+		if up == "ANALYZE" && i > 0 && tokens[i-1].isWord("EXPLAIN") {
+			return reject("EXPLAIN ANALYZE выполняет запрос и запрещён")
+		}
+		return reject(fmt.Sprintf("ключевое слово %s запрещено (%s)", up, reason))
+	}
+	return nil
+}
+
+func checkFunctions(tokens []token) error {
+	for i, t := range tokens {
+		if t.kind != tokWord || i+1 >= len(tokens) || !tokens[i+1].isPunct("(") {
+			continue
+		}
+		if _, bad := forbiddenFunctions[strings.ToLower(t.text)]; bad {
+			return reject(fmt.Sprintf("функция %s() запрещена", t.text))
+		}
+	}
+	return nil
+}
+
+func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
+	ctes := collectCTENames(tokens)
+	seen := map[string]struct{}{}
+	var (
+		tables   []string
+		warnings []string
+	)
+
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		if t.kind != tokWord {
+			continue
+		}
+		switch t.upper() {
+		case "FROM", "JOIN":
+		default:
+			continue
+		}
+		if i+1 >= len(tokens) {
+			continue
+		}
+		next := tokens[i+1]
+		if next.isPunct("(") {
+			continue
+		}
+		if next.kind != tokWord && next.kind != tokQuotedIdent {
+			continue
+		}
+		if i+2 < len(tokens) && tokens[i+2].isPunct("(") {
+			continue
+		}
+
+		parts, consumed := qualifiedName(tokens, i+1)
+		i += consumed
+
+		schema, table := "", strings.ToLower(parts[len(parts)-1])
+		if len(parts) > 1 {
+			schema = strings.ToLower(parts[len(parts)-2])
+		}
+
+		if schema == "" {
+			if _, ok := ctes[table]; ok {
+				continue
+			}
+		}
+		if _, bad := forbiddenSchemas[schema]; bad {
+			return nil, nil, reject(fmt.Sprintf("доступ к системной схеме %s запрещён", schema))
+		}
+		if strings.HasPrefix(table, "pg_") {
+			return nil, nil, reject(fmt.Sprintf("доступ к системному объекту %s запрещён", table))
+		}
+		if schema != "" && schema != strings.ToLower(p.Schema) {
+			return nil, nil, reject(fmt.Sprintf("схема %s недоступна, данные каталога лежат в %s", schema, p.Schema))
+		}
+		if _, ok := p.AllowedTables[table]; !ok {
+			return nil, nil, reject(fmt.Sprintf("таблица %q отсутствует в каталоге загруженных данных", table))
+		}
+		if _, dup := seen[table]; !dup {
+			seen[table] = struct{}{}
+			tables = append(tables, table)
+		}
+	}
+
+	if len(tables) == 0 {
+		warnings = append(warnings, "Запрос не обращается к загруженным данным.")
+	}
+	return tables, warnings, nil
+}
+
+func qualifiedName(tokens []token, start int) (parts []string, consumed int) {
+	parts = []string{tokens[start].text}
+	i := start + 1
+	for i+1 < len(tokens) && tokens[i].isPunct(".") &&
+		(tokens[i+1].kind == tokWord || tokens[i+1].kind == tokQuotedIdent) {
+		parts = append(parts, tokens[i+1].text)
+		i += 2
+	}
+	return parts, i - start
+}
+
+func collectCTENames(tokens []token) map[string]struct{} {
+	out := map[string]struct{}{}
+	for i := 0; i+2 < len(tokens); i++ {
+		if tokens[i].kind != tokWord && tokens[i].kind != tokQuotedIdent {
+			continue
+		}
+		if !tokens[i+1].isWord("AS") {
+			continue
+		}
+		j := i + 2
+		for j < len(tokens) && (tokens[j].isWord("MATERIALIZED") || tokens[j].isWord("NOT")) {
+			j++
+		}
+		if j < len(tokens) && tokens[j].isPunct("(") {
+			out[strings.ToLower(tokens[i].text)] = struct{}{}
+		}
+	}
+	return out
+}
+
+func hasTopLevelLimit(tokens []token) bool {
+	depth := 0
+	for _, t := range tokens {
+		switch {
+		case t.isPunct("("):
+			depth++
+		case t.isPunct(")"):
+			depth--
+		case depth == 0 && t.kind == tokWord && (t.upper() == "LIMIT" || t.upper() == "FETCH"):
+			return true
+		}
+	}
+	return false
+}
+
+func countJoins(tokens []token) int {
+	n := 0
+	for _, t := range tokens {
+		if t.kind == tokWord && t.upper() == "JOIN" {
+			n++
+		}
+	}
+	return n
+}
+
+func reject(reason string) error {
+	return fmt.Errorf("%w: %s", domain.ErrUnsafeQuery, reason)
+}

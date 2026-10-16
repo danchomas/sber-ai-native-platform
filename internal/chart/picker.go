@@ -1,0 +1,189 @@
+package chart
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/heinousness/aibi/internal/domain"
+)
+
+const maxCategories = 40
+
+func Pick(rs *domain.ResultSet, title string) domain.ChartSpec {
+	spec := domain.ChartSpec{Type: domain.ChartTypeTable, Title: title}
+	if rs == nil || len(rs.Columns) == 0 || len(rs.Rows) == 0 {
+		spec.Reason = "нет данных для визуализации"
+		return spec
+	}
+
+	temporal := columnsOfKind(rs, func(c domain.ResultColumn) bool { return c.Type.IsTemporal() })
+	numeric := columnsOfKind(rs, func(c domain.ResultColumn) bool { return c.Type.IsNumeric() })
+	categorical := columnsOfKind(rs, func(c domain.ResultColumn) bool {
+		return !c.Type.IsNumeric() && !c.Type.IsTemporal()
+	})
+
+	switch {
+	case len(rs.Rows) == 1 && len(rs.Columns) == 1 && len(numeric) == 1:
+		spec.Type = domain.ChartTypeKPI
+		spec.Y = []string{rs.Columns[0].Name}
+		spec.Reason = "единственное значение показано как показатель"
+
+	case len(rs.Rows) == 1 && len(numeric) >= 1 && len(numeric) <= 4 && len(categorical) == 0:
+		spec.Type = domain.ChartTypeKPI
+		spec.Y = names(rs, numeric)
+		spec.Reason = "строка агрегатов показана набором показателей"
+
+	case len(temporal) >= 1 && len(numeric) >= 1:
+		spec.Type = domain.ChartTypeLine
+		spec.X = rs.Columns[temporal[0]].Name
+		spec.Y = names(rs, numeric)
+		if len(categorical) == 1 && len(numeric) == 1 {
+			spec.Series = rs.Columns[categorical[0]].Name
+		}
+		spec.Reason = "временная колонка показана как динамика"
+
+	case len(categorical) >= 1 && len(numeric) >= 1:
+		distinct := distinctCount(rs, categorical[0])
+		switch {
+		case len(categorical) >= 2 && len(numeric) == 1 && distinct > 2:
+			spec.Type = domain.ChartTypeBar
+			spec.X = rs.Columns[categorical[0]].Name
+			spec.Series = rs.Columns[categorical[1]].Name
+			spec.Y = names(rs, numeric[:1])
+			spec.Stacked = true
+			spec.Reason = "две категориальные колонки показаны составными столбцами"
+		case distinct > maxCategories:
+			spec.Type = domain.ChartTypeTable
+			spec.Reason = fmt.Sprintf("слишком много категорий (%d) для диаграммы", distinct)
+		case distinct > 12:
+			spec.Type = domain.ChartTypeHBar
+			spec.X = rs.Columns[categorical[0]].Name
+			spec.Y = names(rs, numeric)
+			spec.Reason = "много категорий — горизонтальные столбцы читаются лучше"
+		default:
+			spec.Type = domain.ChartTypeBar
+			spec.X = rs.Columns[categorical[0]].Name
+			spec.Y = names(rs, numeric)
+			spec.Reason = "сравнение значений по категориям"
+		}
+
+	case len(numeric) >= 2 && len(categorical) == 0 && len(temporal) == 0:
+		spec.Type = domain.ChartTypeScatter
+		spec.X = rs.Columns[numeric[0]].Name
+		spec.Y = names(rs, numeric[1:2])
+		spec.Reason = "две числовые колонки показаны диаграммой рассеяния"
+
+	case len(numeric) == 1 && len(rs.Columns) == 1 && len(rs.Rows) > 10:
+		spec.Type = domain.ChartTypeHistogram
+		spec.X = rs.Columns[numeric[0]].Name
+		spec.Reason = "распределение значений одной метрики"
+
+	default:
+		spec.Reason = "форма результата лучше читается таблицей"
+	}
+
+	if spec.X != "" {
+		spec.XLabel = humanize(spec.X)
+	}
+	if len(spec.Y) == 1 {
+		spec.YLabel = humanize(spec.Y[0])
+	}
+	return spec
+}
+
+func Normalize(spec *domain.ChartSpec, rs *domain.ResultSet, title string) domain.ChartSpec {
+	fallback := Pick(rs, title)
+	if spec == nil {
+		return fallback
+	}
+
+	out := *spec
+	if out.Title == "" {
+		out.Title = title
+	}
+	if !domain.KnownChartType(out.Type) {
+		out.Type = fallback.Type
+		out.Reason = "предложенный тип визуализации не поддерживается"
+	}
+	if out.Type == domain.ChartTypeTable || out.Type == domain.ChartTypeKPI {
+		if out.Type == domain.ChartTypeKPI && len(out.Y) == 0 {
+			out.Y = fallback.Y
+		}
+		return out
+	}
+	if rs == nil || len(rs.Rows) == 0 {
+		return fallback
+	}
+
+	if out.X != "" && rs.ColumnIndex(out.X) < 0 {
+		out.X = fallback.X
+	}
+	if out.Series != "" && rs.ColumnIndex(out.Series) < 0 {
+		out.Series = ""
+	}
+	y := make([]string, 0, len(out.Y))
+	for _, name := range out.Y {
+		if rs.ColumnIndex(name) >= 0 {
+			y = append(y, name)
+		}
+	}
+	out.Y = y
+
+	if out.X == "" && out.Type != domain.ChartTypeHistogram {
+		out.X = fallback.X
+	}
+	if len(out.Y) == 0 {
+		out.Y = fallback.Y
+	}
+	if out.X == "" && len(out.Y) == 0 {
+		return fallback
+	}
+	if (out.Type == domain.ChartTypePie || out.Type == domain.ChartTypeDonut) && len(rs.Rows) > 12 {
+		out.Type = domain.ChartTypeHBar
+		out.Reason = "слишком много секторов для круговой диаграммы, показаны столбцы"
+	}
+	if out.XLabel == "" && out.X != "" {
+		out.XLabel = humanize(out.X)
+	}
+	if out.YLabel == "" && len(out.Y) == 1 {
+		out.YLabel = humanize(out.Y[0])
+	}
+	return out
+}
+
+func columnsOfKind(rs *domain.ResultSet, pred func(domain.ResultColumn) bool) []int {
+	var out []int
+	for i, c := range rs.Columns {
+		if pred(c) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func names(rs *domain.ResultSet, idx []int) []string {
+	out := make([]string, 0, len(idx))
+	for _, i := range idx {
+		out = append(out, rs.Columns[i].Name)
+	}
+	return out
+}
+
+func distinctCount(rs *domain.ResultSet, col int) int {
+	seen := make(map[string]struct{}, len(rs.Rows))
+	for _, row := range rs.Rows {
+		if col < len(row) {
+			seen[fmt.Sprint(row[col])] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
+func humanize(name string) string {
+	s := strings.ReplaceAll(name, "_", " ")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return name
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}

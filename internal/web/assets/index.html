@@ -1,0 +1,1693 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI-Native BI</title>
+<style>
+/* Токены интерфейса и палитра визуализаций.
+   Палитра — валидированная категориальная схема (8 слотов, фиксированный
+   порядок, без цикличности): проверена на различимость при дальтонизме и на
+   контраст относительно поверхности графика в обеих темах. */
+:root {
+  color-scheme: dark;
+  --page: #0d0d0f;
+  --surface-1: #17181c;
+  --surface-2: #1e1f24;
+  --surface-3: #262830;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.10);
+  --accent: #3987e5;
+  --good: #0ca30c;
+  --warning: #fab219;
+  --critical: #d03b3b;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --seq-100: #cde2fb;
+  --seq-400: #3987e5;
+  --seq-700: #0d366b;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #ffffff;
+  --surface-3: #f0efec;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --good: #006300;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+  --series-6: #008300;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  display: flex;
+  background: var(--page);
+  color: var(--text-primary);
+  font: 15px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; }
+h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+
+/* ── Боковая панель ─────────────────────────────────────────────── */
+.sidebar {
+  width: 268px;
+  flex: 0 0 268px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 14px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
+.brand-mark {
+  width: 30px; height: 30px; border-radius: 9px;
+  background: linear-gradient(140deg, var(--series-1), var(--series-7));
+  display: grid; place-items: center; font-size: 15px; font-weight: 700; color: #fff;
+}
+.brand-title { font-size: 15px; font-weight: 650; }
+.brand-sub { font-size: 12px; color: var(--text-muted); }
+
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav button {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary); text-align: left;
+}
+.nav button:hover { background: var(--surface-2); color: var(--text-primary); }
+.nav button[aria-current="page"] { background: var(--surface-3); color: var(--text-primary); font-weight: 600; }
+.nav .count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.side-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1; }
+.side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px; font-size: 11px; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.side-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
+.side-item {
+  display: block; width: 100%; text-align: left; border: 0;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.side-item:hover { background: var(--surface-2); color: var(--text-primary); }
+.side-item.active { background: var(--surface-3); color: var(--text-primary); }
+.side-item time { display: block; font-size: 11px; color: var(--text-muted); }
+
+.status { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: 0 0 8px; }
+.dot.ok { background: var(--good); }
+.dot.warn { background: var(--warning); }
+.dot.down { background: var(--critical); }
+
+.icon-btn {
+  border: 1px solid var(--border); background: var(--surface-2);
+  color: var(--text-secondary); border-radius: 7px; padding: 3px 8px; font-size: 12px;
+}
+.icon-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+
+/* ── Основная область ───────────────────────────────────────────── */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.view { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.view.active { display: flex; }
+.view-head {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 18px 28px 12px; border-bottom: 1px solid var(--border);
+}
+.view-head p { margin: 0; color: var(--text-muted); font-size: 13px; }
+.scroll { flex: 1; overflow-y: auto; padding: 22px 28px 40px; }
+
+/* ── Чат ────────────────────────────────────────────────────────── */
+.thread { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.msg { display: flex; gap: 12px; }
+.msg .who {
+  flex: 0 0 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; background: var(--surface-3); color: var(--text-secondary);
+}
+.msg.user .who { background: var(--accent); color: #fff; }
+.msg .body { min-width: 0; flex: 1; }
+.msg.user .text { background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px; display: inline-block; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg .meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+
+.card {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px;
+}
+.answer-extras { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
+  border-radius: 999px; padding: 5px 12px; font-size: 13px;
+}
+.chip:hover { color: var(--text-primary); border-color: var(--accent); }
+.chip.active { border-color: var(--accent); color: var(--text-primary); }
+.notice {
+  display: flex; gap: 8px; padding: 9px 12px; border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  font-size: 13px; color: var(--text-secondary);
+}
+.notice.error {
+  background: color-mix(in srgb, var(--critical) 12%, transparent);
+  border-color: color-mix(in srgb, var(--critical) 40%, transparent);
+}
+details.sql { border-top: 1px solid var(--border); padding-top: 10px; }
+details.sql summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+details.sql pre {
+  margin: 10px 0 0; padding: 12px; overflow-x: auto;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--text-secondary);
+}
+
+.composer { border-top: 1px solid var(--border); background: var(--surface-1); padding: 14px 28px 18px; }
+.composer-inner { max-width: 1040px; margin: 0 auto; }
+.composer-box {
+  display: flex; gap: 10px; align-items: flex-end;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.composer-box:focus-within { border-color: var(--accent); }
+.composer textarea {
+  flex: 1; border: 0; background: transparent; color: var(--text-primary);
+  resize: none; font: inherit; max-height: 160px; outline: none;
+}
+.send {
+  border: 0; border-radius: var(--radius-sm); padding: 8px 16px;
+  background: var(--accent); color: #fff; font-weight: 600;
+}
+.send:disabled { opacity: 0.5; cursor: default; }
+.hint { margin: 8px 2px 0; font-size: 12px; color: var(--text-muted); }
+
+/* ── Данные ─────────────────────────────────────────────────────── */
+.dropzone {
+  border: 1.5px dashed var(--border); border-radius: var(--radius);
+  padding: 26px; text-align: center; color: var(--text-secondary);
+  background: var(--surface-1);
+}
+.dropzone.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface-1)); }
+.dropzone h3 { margin-bottom: 6px; }
+.dropzone p { margin: 0 0 12px; font-size: 13px; color: var(--text-muted); }
+
+.grid { display: grid; gap: 16px; }
+.ds-head { display: flex; align-items: flex-start; gap: 12px; }
+.ds-head h3 { font-size: 16px; }
+.ds-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.ds-actions { margin-left: auto; display: flex; gap: 6px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.tag {
+  font-size: 12px; padding: 3px 9px; border-radius: 999px;
+  background: var(--surface-3); color: var(--text-secondary);
+}
+.tag em { font-style: normal; color: var(--text-muted); }
+
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th, table.data td {
+  padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px;
+}
+table.data th { color: var(--text-muted); font-weight: 600; font-size: 12px;
+  position: sticky; top: 0; background: var(--surface-1); }
+table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data tbody tr:hover { background: var(--surface-2); }
+.table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+/* ── Визуализации ───────────────────────────────────────────────── */
+figure.viz { margin: 0; }
+figure.viz figcaption { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+figure.viz figcaption h4 { font-size: 14px; }
+figure.viz figcaption .sub { font-size: 12px; color: var(--text-muted); }
+figure.viz figcaption .spacer { flex: 1; }
+.viz-body { position: relative; }
+.viz svg { display: block; width: 100%; overflow: visible; }
+.viz text { font-family: var(--font); fill: var(--text-muted); font-size: 11px; }
+.viz text.value { fill: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.1s;
+  background: var(--surface-3); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 7px 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 5; max-width: 260px;
+}
+.tip b { font-variant-numeric: tabular-nums; }
+.kpis { display: flex; flex-wrap: wrap; gap: 12px; }
+.kpi {
+  flex: 1 1 160px; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.kpi .label { font-size: 12px; color: var(--text-muted); }
+.kpi .value { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin-top: 4px; }
+
+/* ── Дашборды ───────────────────────────────────────────────────── */
+.dash-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.widget { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
+.empty { color: var(--text-muted); text-align: center; padding: 60px 20px; }
+.empty h3 { color: var(--text-secondary); margin-bottom: 8px; }
+.spinner {
+  width: 15px; height: 15px; border: 2px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  display: inline-block; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.row { display: flex; align-items: center; gap: 10px; }
+.wrap { flex-wrap: wrap; }
+.muted { color: var(--text-muted); font-size: 13px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+@media (max-width: 900px) {
+  body { flex-direction: column; }
+  .sidebar { width: 100%; flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .side-section { max-height: 180px; }
+  .scroll, .view-head, .composer { padding-left: 16px; padding-right: 16px; }
+  .dash-grid { grid-template-columns: repeat(4, 1fr); }
+}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-mark">AI</div>
+    <div>
+      <div class="brand-title">AI-Native BI</div>
+      <div class="brand-sub">диалог с данными</div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button data-view="chat" aria-current="page">💬 Чат<span class="count" id="nav-chat"></span></button>
+    <button data-view="data">🗂 Данные<span class="count" id="nav-data"></span></button>
+    <button data-view="dashboards">📊 Дашборды<span class="count" id="nav-dash"></span></button>
+  </nav>
+
+  <div class="side-section">
+    <div class="side-head">
+      <span>Диалоги</span>
+      <button class="icon-btn" id="new-session">+ новый</button>
+    </div>
+    <div class="side-list" id="session-list"></div>
+  </div>
+
+  <div class="status">
+    <span class="dot" id="health-dot"></span>
+    <span id="health-text">проверка состояния…</span>
+    <button class="icon-btn" id="theme-toggle" style="margin-left:auto" title="Сменить тему">◐</button>
+  </div>
+</aside>
+
+<main class="main">
+  <section class="view active" id="view-chat">
+    <div class="view-head">
+      <h2 id="session-title">Новый диалог</h2>
+      <p id="session-sub">Спросите о загруженных данных на обычном языке</p>
+    </div>
+    <div class="scroll" id="thread-scroll"><div class="thread" id="thread"></div></div>
+    <div class="composer">
+      <div class="composer-inner">
+        <div class="composer-box">
+          <textarea id="question" rows="1" placeholder="Например: что есть в этих данных? Покажи динамику по месяцам."></textarea>
+          <button class="send" id="send">Спросить</button>
+        </div>
+        <p class="hint">Enter — отправить, Shift+Enter — перенос строки. Контекст диалога учитывается.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-data">
+    <div class="view-head">
+      <h2>Данные</h2>
+      <p>CSV загружается как есть — разбор, типы и профиль считаются внутри платформы</p>
+    </div>
+    <div class="scroll">
+      <div class="grid" style="max-width:1200px;margin:0 auto">
+        <div class="dropzone" id="dropzone">
+          <h3>Перетащите CSV-файл сюда</h3>
+          <p>или выберите файл — разделитель, кодировка и типы колонок определяются автоматически</p>
+          <input type="file" id="file-input" accept=".csv,.tsv,.txt" class="sr-only">
+          <button class="send" id="pick-file">Выбрать файл</button>
+          <div id="upload-status" class="muted" style="margin-top:12px"></div>
+        </div>
+        <div id="datasets" class="grid"></div>
+        <div id="relations"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-dashboards">
+    <div class="view-head">
+      <h2>Дашборды</h2>
+      <p>Панели, собранные агентом, — данные пересчитываются при каждом открытии</p>
+    </div>
+    <div class="scroll">
+      <div style="max-width:1280px;margin:0 auto">
+        <div class="chips" id="dashboard-list" style="margin-bottom:18px"></div>
+        <div id="dashboard-detail"></div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+"use strict";
+
+/* ═══ Утилиты ═════════════════════════════════════════════════════ */
+
+const SVGNS = "http://www.w3.org/2000/svg";
+
+function h(tag, attrs, children) {
+  const node = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k === "text") node.textContent = v;
+    else if (k === "html") node.innerHTML = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (k === "dataset") Object.assign(node.dataset, v);
+    else node.setAttribute(k, v);
+  }
+  for (const child of [].concat(children || [])) {
+    if (child === null || child === undefined || child === false) continue;
+    node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
+  }
+  return node;
+}
+
+function s(tag, attrs, parent) {
+  const node = document.createElementNS(SVGNS, tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "text") node.textContent = v;
+    else if (k === "dataset") Object.assign(node.dataset, v);
+    else node.setAttribute(k, v);
+  }
+  if (parent) parent.appendChild(node);
+  return node;
+}
+
+const numberFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+const compactFmt = new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 });
+
+function isNum(v) {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function toNum(v) {
+  if (isNum(v)) return v;
+  if (typeof v === "string" && v.trim() !== "") {
+    const n = Number(v.replace(/\s/g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function fmtNum(v) {
+  const n = toNum(v);
+  return n === null ? "—" : numberFmt.format(n);
+}
+
+function fmtCompact(v) {
+  const n = toNum(v);
+  if (n === null) return "—";
+  return Math.abs(n) >= 10000 ? compactFmt.format(n) : numberFmt.format(n);
+}
+
+function fmtCell(v) {
+  if (v === null || v === undefined) return "—";
+  if (isNum(v)) return numberFmt.format(v);
+  return String(v);
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtBytes(n) {
+  if (!n) return "—";
+  const units = ["Б", "КБ", "МБ", "ГБ"];
+  let i = 0, v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${numberFmt.format(Math.round(v * 10) / 10)} ${units[i]}`;
+}
+
+function truncate(text, max) {
+  const str = String(text ?? "");
+  return str.length > max ? str.slice(0, max - 1) + "…" : str;
+}
+
+/* ═══ Клиент API ══════════════════════════════════════════════════ */
+
+const api = {
+  async request(method, path, body, isForm) {
+    const init = { method, headers: {} };
+    if (isForm) init.body = body;
+    else if (body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    const resp = await fetch(path, init);
+    if (resp.status === 204) return null;
+    const text = await resp.text();
+    let payload = null;
+    try { payload = text ? JSON.parse(text) : null; } catch (_) { payload = null; }
+    if (!resp.ok) {
+      const message = payload && payload.error ? payload.error.message : `HTTP ${resp.status}`;
+      const err = new Error(message);
+      err.code = payload && payload.error ? payload.error.code : "http_error";
+      throw err;
+    }
+    return payload;
+  },
+  get(path) { return this.request("GET", path); },
+  post(path, body) { return this.request("POST", path, body); },
+  del(path) { return this.request("DELETE", path); },
+  upload(path, form) { return this.request("POST", path, form, true); },
+};
+
+/* ═══ Визуализации ════════════════════════════════════════════════
+   Рендерер строит SVG по спецификации, которую вернул агент.
+   Правила оформления: тонкие метки (столбец ≤ 24px, линия 2px),
+   зазор 2px поверхностью между соседними метками, кольцо поверхности
+   у точек, ненавязчивая сетка, легенда при двух и более серий,
+   подписи значений только там, где они читаются, и обязательная
+   табличная проекция — она же страхует контраст в светлой теме.   */
+
+const Viz = (() => {
+  const W = 760;
+  const MARK_MAX = 24;
+  const GAP = 2;
+
+  function tokens() {
+    const cs = getComputedStyle(document.documentElement);
+    const read = (name) => cs.getPropertyValue(name).trim();
+    return {
+      series: [1, 2, 3, 4, 5, 6, 7, 8].map((i) => read(`--series-${i}`)),
+      grid: read("--grid"),
+      axis: read("--axis"),
+      surface: read("--surface-1"),
+      muted: read("--text-muted"),
+      seqFrom: read("--seq-100"),
+      seqTo: read("--seq-700"),
+    };
+  }
+
+  function colIndex(result, name) {
+    if (!name) return -1;
+    return result.columns.findIndex((c) => c.name === name);
+  }
+
+  function isNumericCol(col) {
+    return col && (col.type === "bigint" || col.type === "double precision");
+  }
+
+  // shape готовит данные под график: категории оси X и набор серий.
+  function shape(spec, result) {
+    const xi = colIndex(result, spec.x);
+    const si = colIndex(result, spec.series);
+    const yNames = (spec.y || []).filter((n) => colIndex(result, n) >= 0);
+    const palette = tokens().series;
+
+    if (si >= 0 && yNames.length >= 1) {
+      // Разбивка на серии: разворачиваем длинную таблицу в матрицу.
+      const yi = colIndex(result, yNames[0]);
+      const cats = [];
+      const names = [];
+      const cells = new Map();
+      for (const row of result.rows) {
+        const cat = fmtCell(row[xi]);
+        const name = fmtCell(row[si]);
+        if (!cats.includes(cat)) cats.push(cat);
+        if (!names.includes(name)) names.push(name);
+        cells.set(`${cat} ${name}`, toNum(row[yi]));
+      }
+      return {
+        categories: cats,
+        series: names.slice(0, 8).map((name, i) => ({
+          name,
+          color: palette[i % palette.length],
+          values: cats.map((cat) => cells.get(`${cat} ${name}`) ?? null),
+        })),
+      };
+    }
+
+    const cats = result.rows.map((row, i) => (xi >= 0 ? fmtCell(row[xi]) : String(i + 1)));
+    const names = yNames.length ? yNames : result.columns.filter(isNumericCol).map((c) => c.name);
+    return {
+      categories: cats,
+      series: names.slice(0, 8).map((name, i) => {
+        const idx = colIndex(result, name);
+        return {
+          name,
+          color: palette[i % palette.length],
+          values: result.rows.map((row) => toNum(row[idx])),
+        };
+      }),
+    };
+  }
+
+  function niceCeil(value) {
+    if (value <= 0) return 1;
+    const exp = Math.floor(Math.log10(value));
+    const base = Math.pow(10, exp);
+    for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10]) {
+      if (value <= m * base) return m * base;
+    }
+    return 10 * base;
+  }
+
+  function extent(series) {
+    let min = 0, max = 0;
+    for (const sr of series) for (const v of sr.values) {
+      if (v === null) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (max === 0 && min === 0) max = 1;
+    return { min: min < 0 ? -niceCeil(-min) : 0, max: niceCeil(max) };
+  }
+
+  // roundedRect рисует метку со скруглённым «концом данных» и прямым основанием.
+  function roundedRect(x, y, w, hgt, r, side) {
+    const rad = Math.max(0, Math.min(r, w / 2, hgt / 2));
+    if (side === "top") {
+      return `M${x},${y + hgt}V${y + rad}a${rad},${rad} 0 0 1 ${rad},${-rad}h${w - 2 * rad}a${rad},${rad} 0 0 1 ${rad},${rad}V${y + hgt}Z`;
+    }
+    if (side === "bottom") {
+      return `M${x},${y}V${y + hgt - rad}a${rad},${rad} 0 0 0 ${rad},${rad}h${w - 2 * rad}a${rad},${rad} 0 0 0 ${rad},${-rad}V${y}Z`;
+    }
+    if (side === "right") {
+      return `M${x},${y}h${w - rad}a${rad},${rad} 0 0 1 ${rad},${rad}v${hgt - 2 * rad}a${rad},${rad} 0 0 1 ${-rad},${rad}H${x}Z`;
+    }
+    return `M${x},${y}h${w}v${hgt}H${x}Z`;
+  }
+
+  function axisY(svg, scale, box, t, formatter) {
+    const ticks = 5;
+    for (let i = 0; i <= ticks; i++) {
+      const value = scale.min + ((scale.max - scale.min) * i) / ticks;
+      const y = box.y + box.h - ((value - scale.min) / (scale.max - scale.min)) * box.h;
+      s("line", { x1: box.x, y1: y, x2: box.x + box.w, y2: y, stroke: t.grid, "stroke-width": 1 }, svg);
+      s("text", { x: box.x - 8, y: y + 4, "text-anchor": "end", text: fmtCompact(value) }, svg);
+    }
+  }
+
+  function axisXLabels(svg, categories, box, t) {
+    const step = Math.ceil(categories.length / Math.max(1, Math.floor(box.w / 64)));
+    const band = box.w / categories.length;
+    const longest = categories.reduce((m, c) => Math.max(m, String(c).length), 0);
+    const rotate = longest > 10 && band < 70;
+
+    categories.forEach((cat, i) => {
+      if (i % step !== 0) return;
+      const cx = box.x + band * (i + 0.5);
+      const label = truncate(cat, rotate ? 18 : 14);
+      if (rotate) {
+        s("text", {
+          x: cx, y: box.y + box.h + 12, "text-anchor": "end",
+          transform: `rotate(-35 ${cx} ${box.y + box.h + 12})`, text: label,
+        }, svg);
+      } else {
+        s("text", { x: cx, y: box.y + box.h + 16, "text-anchor": "middle", text: label }, svg);
+      }
+    });
+  }
+
+  function attachTip(svg, tip) {
+    svg.addEventListener("mousemove", (ev) => {
+      const target = ev.target.closest("[data-tip]");
+      if (!target) { tip.style.opacity = 0; return; }
+      const rect = svg.parentElement.getBoundingClientRect();
+      tip.innerHTML = target.dataset.tip;
+      tip.style.opacity = 1;
+      const left = Math.min(Math.max(ev.clientX - rect.left + 12, 0), rect.width - tip.offsetWidth - 4);
+      tip.style.left = `${left}px`;
+      tip.style.top = `${Math.max(ev.clientY - rect.top - tip.offsetHeight - 10, 0)}px`;
+    });
+    svg.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+  }
+
+  /* ── Формы ──────────────────────────────────────────────────── */
+
+  function columns(data, spec, t, height) {
+    const H = height;
+    const box = { x: 58, y: 12, w: W - 74, h: H - 58 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const stacked = !!spec.stacked && data.series.length > 1;
+
+    const scale = stacked
+      ? { min: 0, max: niceCeil(Math.max(...data.categories.map((_, i) =>
+          data.series.reduce((sum, sr) => sum + (sr.values[i] || 0), 0)))) }
+      : extent(data.series);
+
+    axisY(svg, scale, box, t);
+    const zeroY = box.y + box.h - ((0 - scale.min) / (scale.max - scale.min)) * box.h;
+    s("line", { x1: box.x, y1: zeroY, x2: box.x + box.w, y2: zeroY, stroke: t.axis, "stroke-width": 1 }, svg);
+
+    const band = box.w / data.categories.length;
+    const count = stacked ? 1 : data.series.length;
+    const markW = Math.min(MARK_MAX, Math.max(3, (band - GAP * (count + 1)) / count));
+    const scaleY = (v) => (Math.abs(v) / (scale.max - scale.min)) * box.h;
+
+    data.categories.forEach((cat, i) => {
+      let stackTop = zeroY;
+      data.series.forEach((sr, j) => {
+        const value = sr.values[i];
+        if (value === null) return;
+        const len = Math.max(scaleY(value), 1);
+        const x = stacked
+          ? box.x + band * i + (band - markW) / 2
+          : box.x + band * i + GAP + j * (markW + GAP) + (band - GAP - count * (markW + GAP)) / 2;
+
+        let y, side;
+        if (stacked) {
+          y = stackTop - len;
+          stackTop = y - GAP;
+          side = j === data.series.length - 1 ? "top" : "flat";
+        } else {
+          y = value >= 0 ? zeroY - len : zeroY;
+          side = value >= 0 ? "top" : "bottom";
+        }
+
+        s("path", {
+          d: roundedRect(x, y, markW, len, 4, side),
+          fill: sr.color,
+          dataset: { tip: `${truncate(cat, 40)}<br><b>${sr.name}: ${fmtNum(value)}</b>` },
+        }, svg);
+
+        // Подпись значения — только когда она гарантированно читается.
+        if (!stacked && data.series.length === 1 && data.categories.length <= 12 && value >= 0) {
+          s("text", { x: x + markW / 2, y: y - 6, "text-anchor": "middle", class: "value", text: fmtCompact(value) }, svg);
+        }
+      });
+    });
+
+    axisXLabels(svg, data.categories, box, t);
+    return svg;
+  }
+
+  function bars(data, spec, t, height) {
+    const rows = data.categories.length;
+    const H = Math.max(height, 34 * rows + 40);
+    const box = { x: 148, y: 10, w: W - 190, h: H - 34 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const scale = extent(data.series);
+
+    const ticks = 4;
+    for (let i = 0; i <= ticks; i++) {
+      const value = scale.min + ((scale.max - scale.min) * i) / ticks;
+      const x = box.x + ((value - scale.min) / (scale.max - scale.min)) * box.w;
+      s("line", { x1: x, y1: box.y, x2: x, y2: box.y + box.h, stroke: t.grid, "stroke-width": 1 }, svg);
+      s("text", { x, y: box.y + box.h + 15, "text-anchor": "middle", text: fmtCompact(value) }, svg);
+    }
+    s("line", { x1: box.x, y1: box.y, x2: box.x, y2: box.y + box.h, stroke: t.axis, "stroke-width": 1 }, svg);
+
+    const band = box.h / rows;
+    const count = data.series.length;
+    const markH = Math.min(MARK_MAX, Math.max(3, (band - GAP * (count + 1)) / count));
+
+    data.categories.forEach((cat, i) => {
+      s("text", {
+        x: box.x - 10, y: box.y + band * (i + 0.5) + 4,
+        "text-anchor": "end", text: truncate(cat, 22),
+      }, svg);
+
+      data.series.forEach((sr, j) => {
+        const value = sr.values[i];
+        if (value === null) return;
+        const len = Math.max((Math.abs(value) / (scale.max - scale.min)) * box.w, 1);
+        const y = box.y + band * i + GAP + j * (markH + GAP) + (band - GAP - count * (markH + GAP)) / 2;
+
+        s("path", {
+          d: roundedRect(box.x, y, len, markH, 4, "right"),
+          fill: sr.color,
+          dataset: { tip: `${truncate(cat, 40)}<br><b>${sr.name}: ${fmtNum(value)}</b>` },
+        }, svg);
+
+        if (count === 1 && len + 46 < box.w) {
+          s("text", { x: box.x + len + 7, y: y + markH / 2 + 4, class: "value", text: fmtCompact(value) }, svg);
+        }
+      });
+    });
+    return svg;
+  }
+
+  function lines(data, spec, t, height, area) {
+    const H = height;
+    const box = { x: 58, y: 12, w: W - 74, h: H - 58 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const scale = extent(data.series);
+    axisY(svg, scale, box, t);
+
+    const n = Math.max(data.categories.length, 1);
+    const px = (i) => box.x + (n === 1 ? box.w / 2 : (box.w * i) / (n - 1));
+    const py = (v) => box.y + box.h - ((v - scale.min) / (scale.max - scale.min)) * box.h;
+
+    data.series.forEach((sr) => {
+      const points = sr.values.map((v, i) => (v === null ? null : [px(i), py(v)])).filter(Boolean);
+      if (!points.length) return;
+
+      if (area) {
+        const d = `M${points[0][0]},${box.y + box.h}` +
+          points.map((p) => `L${p[0]},${p[1]}`).join("") +
+          `L${points[points.length - 1][0]},${box.y + box.h}Z`;
+        s("path", { d, fill: sr.color, "fill-opacity": 0.1 }, svg);
+      }
+
+      s("path", {
+        d: "M" + points.map((p) => `${p[0]},${p[1]}`).join("L"),
+        fill: "none", stroke: sr.color, "stroke-width": 2,
+        "stroke-linejoin": "round", "stroke-linecap": "round",
+      }, svg);
+
+      if (points.length <= 40) {
+        sr.values.forEach((v, i) => {
+          if (v === null) return;
+          s("circle", {
+            cx: px(i), cy: py(v), r: 4, fill: sr.color,
+            stroke: t.surface, "stroke-width": 2,
+            dataset: { tip: `${truncate(data.categories[i], 40)}<br><b>${sr.name}: ${fmtNum(v)}</b>` },
+          }, svg);
+        });
+      }
+
+      // Подпись в конце линии — вместо числа на каждой точке.
+      const last = sr.values.reduce((acc, v, i) => (v === null ? acc : i), -1);
+      if (last >= 0 && data.series.length <= 4) {
+        s("text", {
+          x: px(last) + 7, y: py(sr.values[last]) + 4,
+          class: "value", text: fmtCompact(sr.values[last]),
+        }, svg);
+      }
+    });
+
+    axisXLabels(svg, data.categories, box, t);
+    return svg;
+  }
+
+  function pie(data, spec, t, height, donut) {
+    const H = Math.max(height, 300);
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const cx = W / 2, cy = H / 2;
+    const radius = Math.min(H / 2 - 16, 130);
+    const inner = donut ? radius * 0.58 : 0;
+
+    const sr = data.series[0];
+    if (!sr) return svg;
+    const total = sr.values.reduce((sum, v) => sum + Math.max(v || 0, 0), 0);
+    if (total <= 0) return svg;
+
+    const palette = tokens().series;
+    let angle = -Math.PI / 2;
+
+    data.categories.forEach((cat, i) => {
+      const value = Math.max(sr.values[i] || 0, 0);
+      if (value <= 0) return;
+      const share = value / total;
+      const end = angle + share * Math.PI * 2;
+      const large = end - angle > Math.PI ? 1 : 0;
+
+      const x0 = cx + radius * Math.cos(angle), y0 = cy + radius * Math.sin(angle);
+      const x1 = cx + radius * Math.cos(end), y1 = cy + radius * Math.sin(end);
+      let d = `M${x0},${y0}A${radius},${radius} 0 ${large} 1 ${x1},${y1}`;
+      if (inner) {
+        const xi1 = cx + inner * Math.cos(end), yi1 = cy + inner * Math.sin(end);
+        const xi0 = cx + inner * Math.cos(angle), yi0 = cy + inner * Math.sin(angle);
+        d += `L${xi1},${yi1}A${inner},${inner} 0 ${large} 0 ${xi0},${yi0}Z`;
+      } else {
+        d += `L${cx},${cy}Z`;
+      }
+
+      // Зазор делает поверхность, а не обводка метки.
+      s("path", {
+        d, fill: palette[i % palette.length],
+        stroke: t.surface, "stroke-width": GAP,
+        dataset: { tip: `${truncate(cat, 40)}<br><b>${fmtNum(value)} · ${(share * 100).toFixed(1)}%</b>` },
+      }, svg);
+
+      if (share >= 0.05) {
+        const mid = (angle + end) / 2;
+        const lr = inner ? (radius + inner) / 2 : radius * 0.68;
+        s("text", {
+          x: cx + lr * Math.cos(mid), y: cy + lr * Math.sin(mid) + 4,
+          "text-anchor": "middle", class: "value", fill: "#fff",
+          text: `${Math.round(share * 100)}%`,
+        }, svg);
+      }
+      angle = end;
+    });
+
+    if (donut) {
+      s("text", { x: cx, y: cy - 2, "text-anchor": "middle", class: "value", text: "всего" }, svg);
+      s("text", {
+        x: cx, y: cy + 20, "text-anchor": "middle", class: "value",
+        style: "font-size:18px;font-weight:650", text: fmtCompact(total),
+      }, svg);
+    }
+    return svg;
+  }
+
+  function scatter(data, spec, result, t, height) {
+    const H = height;
+    const box = { x: 58, y: 12, w: W - 74, h: H - 52 };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+
+    const xi = colIndex(result, spec.x);
+    const yi = colIndex(result, (spec.y || [])[0]);
+    if (xi < 0 || yi < 0) return svg;
+
+    const points = result.rows
+      .map((row) => [toNum(row[xi]), toNum(row[yi])])
+      .filter((p) => p[0] !== null && p[1] !== null);
+    if (!points.length) return svg;
+
+    const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+    const xMin = Math.min(...xs), xMax = Math.max(...xs);
+    const yScale = { min: Math.min(0, Math.min(...ys)), max: niceCeil(Math.max(...ys)) };
+    axisY(svg, yScale, box, t);
+
+    const px = (v) => box.x + (xMax === xMin ? box.w / 2 : ((v - xMin) / (xMax - xMin)) * box.w);
+    const py = (v) => box.y + box.h - ((v - yScale.min) / (yScale.max - yScale.min)) * box.h;
+    const color = tokens().series[0];
+
+    for (let i = 0; i <= 4; i++) {
+      const value = xMin + ((xMax - xMin) * i) / 4;
+      s("text", { x: px(value), y: box.y + box.h + 16, "text-anchor": "middle", text: fmtCompact(value) }, svg);
+    }
+
+    points.forEach(([x, y]) => {
+      s("circle", {
+        cx: px(x), cy: py(y), r: 4.5, fill: color, "fill-opacity": 0.85,
+        stroke: t.surface, "stroke-width": 2,
+        dataset: { tip: `${spec.x}: <b>${fmtNum(x)}</b><br>${(spec.y || [])[0]}: <b>${fmtNum(y)}</b>` },
+      }, svg);
+    });
+    return svg;
+  }
+
+  function histogram(spec, result, t, height) {
+    const target = spec.x && colIndex(result, spec.x) >= 0
+      ? spec.x
+      : (result.columns.find(isNumericCol) || {}).name;
+    const idx = colIndex(result, target);
+    if (idx < 0) return null;
+
+    const values = result.rows.map((row) => toNum(row[idx])).filter((v) => v !== null);
+    if (!values.length) return null;
+
+    const min = Math.min(...values), max = Math.max(...values);
+    const binCount = Math.min(20, Math.max(5, Math.round(Math.sqrt(values.length))));
+    const width = (max - min) / binCount || 1;
+    const counts = new Array(binCount).fill(0);
+    for (const v of values) {
+      counts[Math.min(binCount - 1, Math.floor((v - min) / width))]++;
+    }
+
+    const data = {
+      categories: counts.map((_, i) => `${fmtCompact(min + i * width)}–${fmtCompact(min + (i + 1) * width)}`),
+      series: [{ name: "Количество записей", color: tokens().series[0], values: counts }],
+    };
+    return columns(data, { stacked: false }, t, height);
+  }
+
+  function heatmap(data, spec, t, height) {
+    const rows = data.series.length;
+    const H = Math.max(height, 26 * rows + 70);
+    const box = { x: 148, y: 10, w: W - 170, h: 24 * rows };
+    const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+
+    let max = 0;
+    for (const sr of data.series) for (const v of sr.values) if (v !== null && v > max) max = v;
+    if (max <= 0) max = 1;
+
+    const band = box.w / data.categories.length;
+    data.series.forEach((sr, r) => {
+      s("text", { x: box.x - 10, y: box.y + 24 * r + 17, "text-anchor": "end", text: truncate(sr.name, 22) }, svg);
+      sr.values.forEach((v, c) => {
+        if (v === null) return;
+        s("rect", {
+          x: box.x + band * c + 1, y: box.y + 24 * r + 1,
+          width: Math.max(band - GAP, 1), height: 22, rx: 3,
+          fill: t.seqTo, "fill-opacity": 0.12 + 0.88 * (v / max),
+          dataset: { tip: `${truncate(data.categories[c], 30)} · ${truncate(sr.name, 30)}<br><b>${fmtNum(v)}</b>` },
+        }, svg);
+      });
+    });
+
+    axisXLabels(svg, data.categories, { ...box, h: box.h }, t);
+    return svg;
+  }
+
+  function kpis(spec, result) {
+    const names = (spec.y || []).filter((n) => colIndex(result, n) >= 0);
+    const chosen = names.length ? names : result.columns.filter(isNumericCol).map((c) => c.name);
+    const row = result.rows[0] || [];
+
+    return h("div", { class: "kpis" }, chosen.slice(0, 4).map((name) => {
+      const value = row[colIndex(result, name)];
+      return h("div", { class: "kpi" }, [
+        h("div", { class: "label", text: name }),
+        h("div", { class: "value", text: fmtCompact(value) }),
+      ]);
+    }));
+  }
+
+  function tableView(result, limit) {
+    const rows = result.rows.slice(0, limit || 200);
+    return h("div", { class: "table-wrap" }, [
+      h("table", { class: "data" }, [
+        h("thead", null, h("tr", null, result.columns.map((c) => h("th", { text: c.name, title: c.name })))),
+        h("tbody", null, rows.map((row) => h("tr", null, row.map((cell, i) => h("td", {
+          class: isNumericCol(result.columns[i]) ? "num" : "",
+          text: fmtCell(cell),
+          title: fmtCell(cell),
+        }))))),
+      ]),
+    ]);
+  }
+
+  function legend(data) {
+    if (data.series.length < 2) return null;
+    return h("div", { class: "legend" }, data.series.map((sr) =>
+      h("span", null, [h("i", { style: `background:${sr.color}` }), truncate(sr.name, 28)])));
+  }
+
+  function categoryLegend(data) {
+    const palette = tokens().series;
+    return h("div", { class: "legend" }, data.categories.slice(0, 8).map((cat, i) =>
+      h("span", null, [h("i", { style: `background:${palette[i % palette.length]}` }), truncate(cat, 28)])));
+  }
+
+  /* render собирает фигуру: график, легенду и табличную проекцию. */
+  function render(spec, result, options) {
+    const opts = options || {};
+    const height = opts.height || 300;
+    const type = (spec && spec.type) || "table";
+
+    if (!result || !result.columns || !result.columns.length) {
+      return h("p", { class: "muted", text: "Нет данных для отображения." });
+    }
+    if (!result.rows.length) {
+      return h("p", { class: "muted", text: "Запрос не вернул ни одной строки." });
+    }
+
+    const t = tokens();
+    const data = shape(spec || {}, result);
+    let plot = null;
+    let plotLegend = null;
+
+    switch (type) {
+      case "kpi": plot = kpis(spec, result); break;
+      case "bar": plot = columns(data, spec, t, height); plotLegend = legend(data); break;
+      case "hbar": plot = bars(data, spec, t, height); plotLegend = legend(data); break;
+      case "line": plot = lines(data, spec, t, height, false); plotLegend = legend(data); break;
+      case "area": plot = lines(data, spec, t, height, true); plotLegend = legend(data); break;
+      case "pie": plot = pie(data, spec, t, height, false); plotLegend = categoryLegend(data); break;
+      case "donut": plot = pie(data, spec, t, height, true); plotLegend = categoryLegend(data); break;
+      case "scatter": plot = scatter(data, spec, result, t, height); break;
+      case "histogram": plot = histogram(spec, result, t, height); break;
+      case "heatmap": plot = heatmap(data, spec, t, height); plotLegend = null; break;
+      default: plot = null;
+    }
+
+    const table = tableView(result, opts.tableLimit);
+    const figure = h("figure", { class: "viz" });
+
+    const title = (spec && spec.title) || opts.title || "";
+    const sub = result.row_count
+      ? `${numberFmt.format(result.row_count)} ${plural(result.row_count, "строка", "строки", "строк")}`
+      : "";
+
+    const caption = h("figcaption", null, [
+      title ? h("h4", { text: truncate(title, 90), title }) : null,
+      sub ? h("span", { class: "sub", text: sub }) : null,
+      h("span", { class: "spacer" }),
+    ]);
+
+    if (plot) {
+      const body = h("div", { class: "viz-body" });
+      const tip = h("div", { class: "tip" });
+      body.appendChild(plot);
+      body.appendChild(tip);
+      if (plot.tagName === "svg") attachTip(plot, tip);
+
+      const tableBlock = h("div", { style: "display:none;margin-top:12px" }, table);
+      const toggle = h("button", { class: "icon-btn", text: "Таблица" });
+      toggle.addEventListener("click", () => {
+        const shown = tableBlock.style.display !== "none";
+        tableBlock.style.display = shown ? "none" : "block";
+        toggle.textContent = shown ? "Таблица" : "Скрыть таблицу";
+        toggle.classList.toggle("active", !shown);
+      });
+      caption.appendChild(toggle);
+
+      figure.append(caption, body);
+      if (plotLegend) figure.appendChild(plotLegend);
+      figure.appendChild(tableBlock);
+    } else {
+      figure.append(caption, table);
+    }
+    return figure;
+  }
+
+  return { render, tableView };
+})();
+
+function plural(n, one, few, many) {
+  const mod10 = n % 10, mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/* ═══ Состояние приложения ════════════════════════════════════════ */
+
+const state = {
+  view: "chat",
+  sessionId: null,
+  sessions: [],
+  datasets: [],
+  dashboards: [],
+  busy: false,
+};
+
+const el = (id) => document.getElementById(id);
+
+/* ── Тема ───────────────────────────────────────────────────────── */
+
+function initTheme() {
+  let stored = null;
+  try { stored = localStorage.getItem("aibi-theme"); } catch (_) { /* приватный режим */ }
+  const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  document.documentElement.dataset.theme = stored || (prefersLight ? "light" : "dark");
+
+  el("theme-toggle").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("aibi-theme", next); } catch (_) { /* не критично */ }
+    rerenderCurrentView();
+  });
+}
+
+function rerenderCurrentView() {
+  // Цвета графиков читаются из токенов темы, поэтому перерисовываем SVG.
+  if (state.view === "chat" && state.sessionId) loadMessages(state.sessionId);
+  if (state.view === "data") renderDatasets();
+  if (state.view === "dashboards" && state.openDashboard) openDashboard(state.openDashboard);
+}
+
+/* ── Навигация ──────────────────────────────────────────────────── */
+
+function switchView(name) {
+  state.view = name;
+  document.querySelectorAll(".nav button").forEach((b) =>
+    b.setAttribute("aria-current", b.dataset.view === name ? "page" : "false"));
+  document.querySelectorAll(".view").forEach((v) =>
+    v.classList.toggle("active", v.id === `view-${name}`));
+
+  if (name === "data") loadDatasets();
+  if (name === "dashboards") loadDashboards();
+}
+
+/* ── Состояние платформы ────────────────────────────────────────── */
+
+async function loadHealth() {
+  const dot = el("health-dot"), text = el("health-text");
+  try {
+    const health = await api.get("/api/v1/health");
+    const llm = health.components.llm || {};
+    if (health.status === "ok") {
+      dot.className = "dot ok";
+      text.textContent = `модель: ${truncate(llm.detail || "подключена", 22)}`;
+    } else if (health.status === "degraded") {
+      dot.className = "dot warn";
+      text.textContent = "модель недоступна";
+    } else {
+      dot.className = "dot down";
+      text.textContent = "база данных недоступна";
+    }
+    text.title = JSON.stringify(health.components, null, 2);
+  } catch (err) {
+    dot.className = "dot down";
+    text.textContent = "сервер недоступен";
+  }
+}
+
+/* ── Диалоги ────────────────────────────────────────────────────── */
+
+async function loadSessions() {
+  const data = await api.get("/api/v1/sessions?limit=50");
+  state.sessions = data.sessions || [];
+  el("nav-chat").textContent = state.sessions.length || "";
+
+  const list = el("session-list");
+  list.replaceChildren(...state.sessions.map((session) => {
+    const item = h("button", {
+      class: `side-item${session.id === state.sessionId ? " active" : ""}`,
+      title: session.title,
+    }, [session.title, h("time", { text: fmtDateTime(session.updated_at) })]);
+    item.addEventListener("click", () => selectSession(session.id));
+    return item;
+  }));
+}
+
+async function newSession() {
+  const session = await api.post("/api/v1/sessions", {});
+  state.sessionId = session.id;
+  await loadSessions();
+  el("session-title").textContent = session.title;
+  el("thread").replaceChildren(welcomeBlock());
+}
+
+async function selectSession(id) {
+  state.sessionId = id;
+  const session = state.sessions.find((s) => s.id === id);
+  if (session) el("session-title").textContent = session.title;
+  await loadSessions();
+  await loadMessages(id);
+  switchView("chat");
+}
+
+async function loadMessages(id) {
+  const data = await api.get(`/api/v1/sessions/${id}/messages?limit=100`);
+  const messages = data.messages || [];
+  const thread = el("thread");
+
+  if (!messages.length) {
+    thread.replaceChildren(welcomeBlock());
+    return;
+  }
+  thread.replaceChildren(...messages.map((m) =>
+    m.role === "user" ? userMessage(m.content) : assistantMessage(m.answer, m.content)));
+  scrollThread();
+}
+
+function welcomeBlock() {
+  const examples = [
+    "Что есть в этих данных?",
+    "За какой период данные и сколько их?",
+    "Какие значения встречаются чаще всего?",
+    "Покажи динамику по месяцам",
+    "Есть ли здесь повторяющиеся записи?",
+    "Собери дашборд с ежеквартальной статистикой",
+  ];
+  return h("div", { class: "card" }, [
+    h("h3", { text: "Спросите данные о чём угодно" }),
+    h("p", { class: "muted", style: "margin:8px 0 14px" },
+      "Я отвечаю по загруженным CSV: описываю структуру, считаю показатели, подбираю визуализацию и собираю дашборды. Контекст диалога сохраняется."),
+    h("div", { class: "chips" }, examples.map((text) => {
+      const chip = h("button", { class: "chip", text });
+      chip.addEventListener("click", () => ask(text));
+      return chip;
+    })),
+  ]);
+}
+
+function userMessage(text) {
+  return h("div", { class: "msg user" }, [
+    h("div", { class: "who", text: "Я" }),
+    h("div", { class: "body" }, h("div", { class: "text", text })),
+  ]);
+}
+
+const intentLabels = {
+  overview: "описание данных",
+  query: "расчёт по данным",
+  dashboard: "дашборд",
+  clarify: "уточнение",
+  reject: "отказ",
+  smalltalk: "о платформе",
+};
+
+function assistantMessage(answer, fallbackText) {
+  const body = h("div", { class: "body" });
+  const card = h("div", { class: "card" });
+  card.appendChild(h("div", { class: "text", text: (answer && answer.text) || fallbackText || "" }));
+
+  if (answer) {
+    const extras = h("div", { class: "answer-extras" });
+
+    for (const warning of answer.warnings || []) {
+      extras.appendChild(h("div", { class: "notice" }, ["⚠", warning]));
+    }
+    if (answer.result && answer.result.columns && answer.result.columns.length) {
+      extras.appendChild(Viz.render(answer.chart || { type: "table" }, answer.result, { height: 300 }));
+    }
+    if (answer.dashboard_id) {
+      const open = h("button", { class: "chip", text: "Открыть дашборд →" });
+      open.addEventListener("click", () => { switchView("dashboards"); openDashboard(answer.dashboard_id); });
+      extras.appendChild(h("div", { class: "chips" }, open));
+    }
+    if ((answer.followups || []).length) {
+      extras.appendChild(h("div", { class: "chips" }, answer.followups.map((text) => {
+        const chip = h("button", { class: "chip", text });
+        chip.addEventListener("click", () => ask(text));
+        return chip;
+      })));
+    }
+    if (answer.sql) {
+      extras.appendChild(h("details", { class: "sql" }, [
+        h("summary", { text: "Как это посчитано (SQL)" }),
+        h("pre", { text: answer.sql }),
+      ]));
+    }
+    if (extras.children.length) card.appendChild(extras);
+    body.appendChild(card);
+
+    const meta = [intentLabels[answer.intent] || answer.intent];
+    if (answer.datasets && answer.datasets.length) meta.push(answer.datasets.join(", "));
+    if (answer.elapsed_ms) meta.push(`${(answer.elapsed_ms / 1000).toFixed(1)} с`);
+    body.appendChild(h("div", { class: "meta", text: meta.join(" · ") }));
+  } else {
+    body.appendChild(card);
+  }
+
+  return h("div", { class: "msg" }, [h("div", { class: "who", text: "AI" }), body]);
+}
+
+function scrollThread() {
+  const scroll = el("thread-scroll");
+  scroll.scrollTop = scroll.scrollHeight;
+}
+
+async function ask(questionText) {
+  const input = el("question");
+  const question = (questionText !== undefined ? questionText : input.value).trim();
+  if (!question || state.busy) return;
+
+  if (!state.sessionId) await newSession();
+  input.value = "";
+  input.style.height = "auto";
+
+  const thread = el("thread");
+  if (thread.firstElementChild && thread.firstElementChild.classList.contains("card")) {
+    thread.replaceChildren();
+  }
+  thread.appendChild(userMessage(question));
+
+  const pending = h("div", { class: "msg" }, [
+    h("div", { class: "who", text: "AI" }),
+    h("div", { class: "body" }, h("div", { class: "card row" },
+      [h("span", { class: "spinner" }), h("span", { class: "muted", text: "думаю над вопросом…" })])),
+  ]);
+  thread.appendChild(pending);
+  scrollThread();
+
+  setBusy(true);
+  try {
+    const data = await api.post(`/api/v1/sessions/${state.sessionId}/messages`, { question });
+    pending.replaceWith(assistantMessage(data.answer));
+    await loadSessions();
+    if (data.answer && data.answer.dashboard_id) loadDashboards();
+  } catch (err) {
+    pending.replaceWith(h("div", { class: "msg" }, [
+      h("div", { class: "who", text: "AI" }),
+      h("div", { class: "body" }, h("div", { class: "notice error" }, ["✕", `Не удалось получить ответ: ${err.message}`])),
+    ]));
+  } finally {
+    setBusy(false);
+    scrollThread();
+  }
+}
+
+function setBusy(busy) {
+  state.busy = busy;
+  el("send").disabled = busy;
+  el("send").textContent = busy ? "Считаю…" : "Спросить";
+}
+
+/* ── Данные ─────────────────────────────────────────────────────── */
+
+async function loadDatasets() {
+  try {
+    const data = await api.get("/api/v1/datasets");
+    state.datasets = data.datasets || [];
+    el("nav-data").textContent = state.datasets.length || "";
+    renderDatasets();
+    loadRelations();
+  } catch (err) {
+    el("datasets").replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+  }
+}
+
+const roleLabels = {
+  identifier: "идентификатор",
+  temporal: "дата",
+  measure: "метрика",
+  dimension: "разрез",
+  free_text: "текст",
+  unknown: "—",
+};
+
+function renderDatasets() {
+  const container = el("datasets");
+  if (!state.datasets.length) {
+    container.replaceChildren(h("div", { class: "empty" }, [
+      h("h3", { text: "Данных пока нет" }),
+      h("p", { text: "Загрузите CSV — платформа сама разберёт структуру и посчитает профиль." }),
+    ]));
+    return;
+  }
+
+  container.replaceChildren(...state.datasets.map((dataset) => {
+    const card = h("div", { class: "card" });
+    const preview = h("div", { style: "margin-top:14px" });
+
+    const previewBtn = h("button", { class: "icon-btn", text: "Первые строки" });
+    previewBtn.addEventListener("click", async () => {
+      previewBtn.disabled = true;
+      try {
+        const result = await api.get(`/api/v1/datasets/${dataset.id}/preview?limit=25`);
+        preview.replaceChildren(Viz.tableView(result, 25));
+      } catch (err) {
+        preview.replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+      } finally {
+        previewBtn.disabled = false;
+      }
+    });
+
+    const profileBtn = h("button", { class: "icon-btn", text: "Профиль" });
+    profileBtn.addEventListener("click", async () => {
+      profileBtn.disabled = true;
+      try {
+        preview.replaceChildren(profileBlock(await api.get(`/api/v1/datasets/${dataset.id}/profile`)));
+      } catch (err) {
+        preview.replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+      } finally {
+        profileBtn.disabled = false;
+      }
+    });
+
+    const deleteBtn = h("button", { class: "icon-btn", text: "Удалить" });
+    deleteBtn.addEventListener("click", async () => {
+      if (!confirm(`Удалить датасет «${dataset.name}» вместе с таблицей?`)) return;
+      await api.del(`/api/v1/datasets/${dataset.id}`);
+      loadDatasets();
+    });
+
+    const period = (dataset.columns || [])
+      .filter((c) => c.role === "temporal" && c.profile && c.profile.min_value)
+      .map((c) => `${c.profile.min_value} … ${c.profile.max_value}`)[0];
+
+    card.append(
+      h("div", { class: "ds-head" }, [
+        h("div", null, [
+          h("h3", { text: dataset.name }),
+          h("div", { class: "ds-meta" },
+            [`${numberFmt.format(dataset.row_count)} ${plural(dataset.row_count, "строка", "строки", "строк")}`,
+             `${(dataset.columns || []).length} ${plural((dataset.columns || []).length, "колонка", "колонки", "колонок")}`,
+             fmtBytes(dataset.size_bytes),
+             `разделитель «${dataset.delimiter}»`,
+             period ? `период ${period}` : null].filter(Boolean).join(" · ")),
+        ]),
+        h("div", { class: "ds-actions" }, [previewBtn, profileBtn, deleteBtn]),
+      ]),
+      h("div", { class: "tags" }, (dataset.columns || []).map((c) => h("span", {
+        class: "tag",
+        title: `${c.source_name || c.name} · ${c.type}${c.profile ? ` · различных значений: ${numberFmt.format(c.profile.distinct_count)}` : ""}`,
+      }, [c.name, " ", h("em", { text: roleLabels[c.role] || c.role })]))),
+      preview,
+    );
+    return card;
+  }));
+}
+
+function profileBlock(profile) {
+  const rows = (profile.dataset.columns || []).map((c) => [
+    c.source_name || c.name,
+    c.name,
+    c.type,
+    roleLabels[c.role] || c.role,
+    c.profile ? c.profile.distinct_count : null,
+    c.profile ? `${Math.round((c.profile.null_count / Math.max(c.profile.row_count, 1)) * 100)}%` : "—",
+    c.profile && c.profile.min_value !== null ? truncate(c.profile.min_value, 24) : "—",
+    c.profile && c.profile.max_value !== null ? truncate(c.profile.max_value, 24) : "—",
+    c.profile && c.profile.top_values && c.profile.top_values.length
+      ? c.profile.top_values.slice(0, 3).map((v) => `${truncate(v.value, 18)} (${Math.round(v.share * 100)}%)`).join(", ")
+      : "—",
+  ]);
+
+  const table = {
+    columns: [
+      { name: "Поле в файле", type: "text" },
+      { name: "Колонка", type: "text" },
+      { name: "Тип", type: "text" },
+      { name: "Роль", type: "text" },
+      { name: "Уникальных", type: "bigint" },
+      { name: "Пропусков", type: "text" },
+      { name: "Минимум", type: "text" },
+      { name: "Максимум", type: "text" },
+      { name: "Частые значения", type: "text" },
+    ],
+    rows,
+    row_count: rows.length,
+  };
+
+  const notes = [];
+  if (profile.candidate_keys && profile.candidate_keys.length) {
+    notes.push(`Кандидаты в ключи: ${profile.candidate_keys.join(", ")}.`);
+  }
+  if (profile.duplicate_rows) {
+    notes.push(`Полных дубликатов строк: ${numberFmt.format(profile.duplicate_rows)}.`);
+  }
+  for (const span of profile.time_coverage || []) {
+    notes.push(`Период по «${span.column}»: ${String(span.from).slice(0, 10)} — ${String(span.to).slice(0, 10)} (${span.days} дн.).`);
+  }
+
+  return h("div", null, [
+    notes.length ? h("p", { class: "muted", style: "margin:0 0 10px", text: notes.join(" ") }) : null,
+    Viz.tableView(table, 200),
+  ]);
+}
+
+async function loadRelations() {
+  try {
+    const data = await api.get("/api/v1/catalog/relations");
+    const relations = data.relations || [];
+    const container = el("relations");
+    if (!relations.length) { container.replaceChildren(); return; }
+
+    container.replaceChildren(h("div", { class: "card" }, [
+      h("h3", { text: "Связи между датасетами" }),
+      h("p", { class: "muted", style: "margin:6px 0 12px" },
+        "Выведены по пересечению значений идентификаторов — внешних ключей в CSV нет."),
+      h("div", { class: "grid" }, relations.map((r) => h("div", { class: "row wrap" }, [
+        h("span", { text: `«${r.left_dataset}».${r.left_column}` }),
+        h("span", { class: "muted", text: "→" }),
+        h("span", { text: `«${r.right_dataset}».${r.right_column}` }),
+        h("span", { class: "tag", text: `${Math.round(r.overlap * 100)}% совпадений` }),
+        h("span", { class: "tag", text: r.cardinality }),
+      ]))),
+    ]));
+  } catch (_) { /* связи — необязательный блок */ }
+}
+
+async function uploadFile(file) {
+  if (!file) return;
+  const status = el("upload-status");
+  status.replaceChildren(h("span", { class: "row" },
+    [h("span", { class: "spinner" }), ` загружаю «${file.name}» (${fmtBytes(file.size)})…`]));
+
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const report = await api.upload("/api/v1/datasets", form);
+    const parts = [
+      `Загружено ${numberFmt.format(report.rows_loaded)} ${plural(report.rows_loaded, "строка", "строки", "строк")}`,
+      `${(report.dataset.columns || []).length} колонок`,
+      `кодировка ${report.encoding}`,
+      `${(report.elapsed_ms / 1000).toFixed(1)} с`,
+    ];
+    status.replaceChildren(h("div", null, [
+      h("div", { text: `✓ ${report.dataset.name}: ${parts.join(" · ")}` }),
+      ...(report.warnings || []).map((w) => h("div", { class: "notice", style: "margin-top:8px" }, ["⚠", w])),
+    ]));
+    await loadDatasets();
+  } catch (err) {
+    status.replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+  }
+}
+
+/* ── Дашборды ───────────────────────────────────────────────────── */
+
+async function loadDashboards() {
+  try {
+    const data = await api.get("/api/v1/dashboards?limit=50");
+    state.dashboards = data.dashboards || [];
+    el("nav-dash").textContent = state.dashboards.length || "";
+
+    const list = el("dashboard-list");
+    list.replaceChildren(...state.dashboards.map((dashboard) => {
+      const chip = h("button", {
+        class: `chip${state.openDashboard === dashboard.id ? " active" : ""}`,
+        text: dashboard.title,
+      });
+      chip.addEventListener("click", () => openDashboard(dashboard.id));
+      return chip;
+    }));
+
+    if (!state.dashboards.length) {
+      el("dashboard-detail").replaceChildren(h("div", { class: "empty" }, [
+        h("h3", { text: "Дашбордов пока нет" }),
+        h("p", { text: "Попросите агента в чате: «собери дашборд с ключевыми показателями»." }),
+      ]));
+      return;
+    }
+    openDashboard(state.openDashboard && state.dashboards.some((d) => d.id === state.openDashboard)
+      ? state.openDashboard
+      : state.dashboards[0].id);
+  } catch (err) {
+    el("dashboard-detail").replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+  }
+}
+
+async function openDashboard(id) {
+  state.openDashboard = id;
+  const detail = el("dashboard-detail");
+  detail.replaceChildren(h("div", { class: "row" },
+    [h("span", { class: "spinner" }), h("span", { class: "muted", text: " пересчитываю данные панели…" })]));
+
+  document.querySelectorAll("#dashboard-list .chip").forEach((chip) =>
+    chip.classList.toggle("active", chip.textContent === (state.dashboards.find((d) => d.id === id) || {}).title));
+
+  try {
+    const dashboard = await api.get(`/api/v1/dashboards/${id}?refresh=true`);
+    const removeBtn = h("button", { class: "icon-btn", text: "Удалить панель" });
+    removeBtn.addEventListener("click", async () => {
+      if (!confirm(`Удалить дашборд «${dashboard.title}»?`)) return;
+      await api.del(`/api/v1/dashboards/${dashboard.id}`);
+      state.openDashboard = null;
+      loadDashboards();
+    });
+
+    detail.replaceChildren(
+      h("div", { class: "row wrap", style: "margin-bottom:14px" }, [
+        h("h3", { text: dashboard.title }),
+        h("span", { class: "muted", text: fmtDateTime(dashboard.created_at) }),
+        h("span", { class: "spacer", style: "flex:1" }),
+        removeBtn,
+      ]),
+      dashboard.description
+        ? h("p", { class: "muted", style: "margin:0 0 14px", text: dashboard.description })
+        : h("span"),
+      h("div", { class: "dash-grid" }, (dashboard.widgets || []).map((widget) => {
+        const span = Math.max(3, Math.min(12, widget.width || 6));
+        const cell = h("div", {
+          class: "widget",
+          style: `grid-column: span ${span}`,
+        });
+        if (widget.error) {
+          cell.append(h("h4", { text: widget.title }), h("div", { class: "notice error", style: "margin-top:10px" }, ["✕", widget.error]));
+        } else {
+          cell.appendChild(Viz.render(widget.chart, widget.result, {
+            height: span >= 9 ? 300 : 260,
+            title: widget.title,
+            tableLimit: 100,
+          }));
+          if (widget.sql) {
+            cell.appendChild(h("details", { class: "sql", style: "margin-top:12px" }, [
+              h("summary", { text: "SQL виджета" }),
+              h("pre", { text: widget.sql }),
+            ]));
+          }
+        }
+        return cell;
+      })),
+    );
+  } catch (err) {
+    detail.replaceChildren(h("div", { class: "notice error" }, ["✕", err.message]));
+  }
+}
+
+/* ═══ Инициализация ═══════════════════════════════════════════════ */
+
+function bindEvents() {
+  document.querySelectorAll(".nav button").forEach((button) =>
+    button.addEventListener("click", () => switchView(button.dataset.view)));
+
+  el("new-session").addEventListener("click", () => newSession());
+  el("send").addEventListener("click", () => ask());
+
+  const input = el("question");
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); ask(); }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+  });
+
+  el("pick-file").addEventListener("click", () => el("file-input").click());
+  el("file-input").addEventListener("change", (ev) => uploadFile(ev.target.files[0]));
+
+  const zone = el("dropzone");
+  for (const type of ["dragenter", "dragover"]) {
+    zone.addEventListener(type, (ev) => { ev.preventDefault(); zone.classList.add("over"); });
+  }
+  for (const type of ["dragleave", "dragend"]) {
+    zone.addEventListener(type, () => zone.classList.remove("over"));
+  }
+  zone.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    zone.classList.remove("over");
+    uploadFile(ev.dataTransfer.files[0]);
+  });
+}
+
+async function boot() {
+  initTheme();
+  bindEvents();
+  await loadHealth();
+  setInterval(loadHealth, 30000);
+
+  try {
+    await loadSessions();
+    if (state.sessions.length) {
+      await selectSession(state.sessions[0].id);
+    } else {
+      await newSession();
+    }
+  } catch (err) {
+    el("thread").replaceChildren(h("div", { class: "notice error" }, ["✕", `Сервер недоступен: ${err.message}`]));
+  }
+  loadDatasets();
+  loadDashboards();
+}
+
+boot();
+</script>
+</body>
+</html>

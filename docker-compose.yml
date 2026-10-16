@@ -1,0 +1,67 @@
+# Локальный стенд платформы. Внешние сервисы не требуются:
+# PostgreSQL и языковая модель поднимаются рядом в том же compose.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: aibi
+      POSTGRES_PASSWORD: aibi
+      POSTGRES_DB: aibi
+      # Настройки под аналитическую нагрузку на одной машине.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - jit=off
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aibi -d aibi"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-local}
+    environment:
+      DATABASE_URL: postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable
+      RAW_SCHEMA: raw
+      HTTP_ADDR: ":8080"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LLM_ENABLED: ${LLM_ENABLED:-true}
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:14b}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      QUERY_MAX_ROWS: ${QUERY_MAX_ROWS:-5000}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Локальная модель. Профиль llm включается явно:
+  #   docker compose --profile llm up -d
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  pgdata:
+  ollama:
