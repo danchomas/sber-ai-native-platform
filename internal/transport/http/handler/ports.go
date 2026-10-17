@@ -20,7 +20,7 @@ type Catalog interface {
 	Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, error)
 	Preview(ctx context.Context, id uuid.UUID, limit int) (*domain.ResultSet, error)
 	Relations(ctx context.Context) ([]domain.Relation, error)
-	Tables(ctx context.Context) ([]string, error)
+	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
 }
 
@@ -40,5 +40,5 @@ type Dashboards interface {
 }
 
 type Executor interface {
-	Query(ctx context.Context, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
 }

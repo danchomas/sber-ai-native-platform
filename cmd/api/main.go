@@ -60,11 +60,16 @@ func run() error {
 		log.Info("миграции применены", "count", len(applied), "versions", applied)
 	}
 
+	sourceRepo := postgres.NewSourceRepository(pool)
 	datasetRepo := postgres.NewDatasetRepository(pool)
 	relationRepo := postgres.NewRelationRepository(pool)
-	rawRepo := postgres.NewRawDataRepository(pool, cfg.Postgres.RawSchema, cfg.Query.Timeout)
 	sessionRepo := postgres.NewSessionRepository(pool)
 	dashboardRepo := postgres.NewDashboardRepository(pool)
+
+	registry := postgres.NewRegistry(pool, sourceRepo, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	defer registry.Close()
+
+	rawRepo := postgres.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
 
 	model := newModel(ctx, cfg, log)
 

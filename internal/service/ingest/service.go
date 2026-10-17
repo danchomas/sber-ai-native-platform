@@ -119,7 +119,7 @@ func (s *Service) Upload(ctx context.Context, req Request) (*Report, error) {
 
 	dataset.RowCount = loaded
 	dataset.Status = domain.DatasetStatusReady
-	if physical, err := s.raw.TableSizeBytes(ctx, dataset.TableName); err == nil {
+	if physical, err := s.raw.TableSizeBytes(ctx, dataset.Ref()); err == nil {
 		dataset.SizeBytes = physical
 	}
 	if err := s.datasets.Update(ctx, dataset); err != nil {

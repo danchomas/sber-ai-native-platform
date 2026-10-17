@@ -32,6 +32,23 @@ type Source struct {
 
 func (s *Source) Ready() bool { return s.Status == SourceStatusReady }
 
+type QueryTarget struct {
+	SourceID *uuid.UUID
+	Schemas  []string
+}
+
+func LocalTarget(schema string) QueryTarget {
+	return QueryTarget{Schemas: []string{schema}}
+}
+
+type Scope struct {
+	SourceName string
+	Target     QueryTarget
+	Datasets   []Dataset
+}
+
+func (s Scope) Local() bool { return s.Target.SourceID == nil }
+
 type DatasetOrigin string
 
 const (

@@ -26,6 +26,7 @@ type queryRequest struct {
 
 type queryResponse struct {
 	Result   *domain.ResultSet `json:"result"`
+	Source   string            `json:"source,omitempty"`
 	Tables   []string          `json:"tables,omitempty"`
 	Warnings []string          `json:"warnings,omitempty"`
 }
@@ -41,7 +42,7 @@ func (h *QueryHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tables, err := h.catalog.Tables(r.Context())
+	scopes, err := h.catalog.Scopes(r.Context())
 	if err != nil {
 		writeError(w, r, err)
 		return
@@ -52,19 +53,20 @@ func (h *QueryHandler) Run(w http.ResponseWriter, r *http.Request) {
 		maxRows = h.cfg.MaxRows
 	}
 
-	checked, err := sqlguard.Validate(req.SQL, sqlguard.NewPolicy(h.catalog.Schema(), tables, maxRows))
+	scope, checked, err := sqlguard.ResolveScope(req.SQL, scopes, h.catalog.Schema(), maxRows)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
-	result, err := h.exec.Query(r.Context(), checked.SQL, maxRows)
+	result, err := h.exec.Query(r.Context(), scope.Target, checked.SQL, maxRows)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	writeJSON(w, r, http.StatusOK, queryResponse{
 		Result:   result,
+		Source:   scope.SourceName,
 		Tables:   checked.Tables,
 		Warnings: checked.Warnings,
 	})

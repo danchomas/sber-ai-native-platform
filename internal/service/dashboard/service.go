@@ -17,12 +17,12 @@ import (
 const widgetConcurrency = 4
 
 type Catalog interface {
-	Tables(ctx context.Context) ([]string, error)
+	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
 }
 
 type Executor interface {
-	Query(ctx context.Context, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
 }
 
 type Service struct {
@@ -83,11 +83,10 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 		return d, nil
 	}
 
-	tables, err := s.catalog.Tables(ctx)
+	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	policy := sqlguard.NewPolicy(s.catalog.Schema(), tables, s.cfg.MaxRows)
 
 	var mu sync.Mutex
 	g, gctx := errgroup.WithContext(ctx)
@@ -96,14 +95,15 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 	for i := range d.Widgets {
 		i := i
 		g.Go(func() error {
-			checked, err := sqlguard.Validate(d.Widgets[i].SQL, policy)
+			scope, checked, err := sqlguard.ResolveScope(
+				d.Widgets[i].SQL, scopes, s.catalog.Schema(), s.cfg.MaxRows)
 			if err != nil {
 				mu.Lock()
 				d.Widgets[i].Error = "запрос больше недоступен: " + err.Error()
 				mu.Unlock()
 				return nil
 			}
-			result, err := s.exec.Query(gctx, checked.SQL, s.cfg.MaxRows)
+			result, err := s.exec.Query(gctx, scope.Target, checked.SQL, s.cfg.MaxRows)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {

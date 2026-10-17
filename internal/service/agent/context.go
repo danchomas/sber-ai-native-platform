@@ -22,22 +22,49 @@ var roleNames = map[domain.SemanticRole]string{
 func buildSchemaContext(schema string, datasets []domain.Dataset, relations []domain.Relation) string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb, "Схема данных: %s. Все таблицы доступны только для чтения.\n", schema)
+	sb.WriteString("Все таблицы доступны только для чтения.\n")
 	if len(datasets) == 0 {
 		sb.WriteString("Данные не загружены.\n")
 		return sb.String()
 	}
 
+	var sources []string
+	grouped := make(map[string][]domain.Dataset)
 	for _, d := range datasets {
 		if !d.Ready() {
 			continue
 		}
-		fmt.Fprintf(&sb, "\nТАБЛИЦА %s.%s — датасет «%s», строк: %d, колонок: %d\n",
-			schema, d.TableName, d.Name, d.RowCount, len(d.Columns))
-
-		for _, c := range d.Columns {
-			sb.WriteString(describeColumn(c))
+		if _, seen := grouped[d.SourceName]; !seen {
+			sources = append(sources, d.SourceName)
 		}
+		grouped[d.SourceName] = append(grouped[d.SourceName], d)
+	}
+
+	for _, source := range sources {
+		if source == "" {
+			sb.WriteString("\nДАННЫЕ, ЗАГРУЖЕННЫЕ В ПЛАТФОРМУ:\n")
+		} else {
+			fmt.Fprintf(&sb, "\nИСТОЧНИК «%s» (подключённая база):\n", source)
+		}
+
+		for _, d := range grouped[source] {
+			tableSchema := d.Schema
+			if tableSchema == "" {
+				tableSchema = schema
+			}
+			fmt.Fprintf(&sb, "\nТАБЛИЦА %s.%s — датасет «%s», строк: %d, колонок: %d\n",
+				tableSchema, d.TableName, d.Name, d.RowCount, len(d.Columns))
+
+			for _, c := range d.Columns {
+				sb.WriteString(describeColumn(c))
+			}
+		}
+	}
+
+	if len(sources) > 1 {
+		sb.WriteString("\nВАЖНО: таблицы разных источников лежат в разных базах. " +
+			"Соединить их одним запросом невозможно — отвечай по одному источнику " +
+			"или скажи, что для ответа нужны данные из разных баз.\n")
 	}
 
 	if len(relations) > 0 {
@@ -180,11 +207,11 @@ func formatCell(v any) string {
 func datasetNames(datasets []domain.Dataset, tables []string) []string {
 	byTable := make(map[string]string, len(datasets))
 	for _, d := range datasets {
-		byTable[d.TableName] = d.Name
+		byTable[strings.ToLower(d.Schema+"."+d.TableName)] = d.Name
 	}
 	out := make([]string, 0, len(tables))
 	for _, t := range tables {
-		if name, ok := byTable[t]; ok {
+		if name, ok := byTable[strings.ToLower(t)]; ok {
 			out = append(out, name)
 		}
 	}

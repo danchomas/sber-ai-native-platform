@@ -85,6 +85,7 @@ func newFakeCatalog() *fakeCatalog {
 	minV, maxV := "2023-01-01", "2024-06-30"
 	return &fakeCatalog{datasets: []domain.Dataset{{
 		ID: id, Name: "orders", TableName: "ds_orders", Status: domain.DatasetStatusReady,
+		Origin: domain.OriginUploaded, Schema: "raw",
 		RowCount: 1000, SourceFile: "orders.csv",
 		Columns: []domain.Column{
 			{Name: "order_id", SourceName: "Order ID", Type: domain.ColumnTypeInteger, Role: domain.RoleIdentifier,
@@ -108,12 +109,20 @@ func (c *fakeCatalog) Relations(context.Context) ([]domain.Relation, error) {
 	return c.relations, nil
 }
 
-func (c *fakeCatalog) Tables(context.Context) ([]string, error) {
-	out := make([]string, 0, len(c.datasets))
+func (c *fakeCatalog) Scopes(context.Context) ([]domain.Scope, error) {
+	ready := make([]domain.Dataset, 0, len(c.datasets))
 	for _, d := range c.datasets {
-		out = append(out, d.TableName)
+		if d.Ready() {
+			ready = append(ready, d)
+		}
 	}
-	return out, nil
+	if len(ready) == 0 {
+		return nil, nil
+	}
+	return []domain.Scope{{
+		Target:   domain.QueryTarget{Schemas: []string{"raw"}},
+		Datasets: ready,
+	}}, nil
 }
 
 func (c *fakeCatalog) Schema() string { return "raw" }
@@ -125,7 +134,7 @@ type fakeExecutor struct {
 	failOnce error
 }
 
-func (e *fakeExecutor) Query(_ context.Context, sql string, _ int) (*domain.ResultSet, error) {
+func (e *fakeExecutor) Query(_ context.Context, _ domain.QueryTarget, sql string, _ int) (*domain.ResultSet, error) {
 	e.queries = append(e.queries, sql)
 	if e.failOnce != nil {
 		err := e.failOnce
