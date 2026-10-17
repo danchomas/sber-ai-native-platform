@@ -163,8 +163,10 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.raw.DropTable(ctx, dataset.TableName); err != nil {
-		return err
+	if !dataset.Attached() {
+		if err := s.raw.DropTable(ctx, dataset.TableName); err != nil {
+			return err
+		}
 	}
 	if err := s.datasets.Delete(ctx, id); err != nil {
 		return err

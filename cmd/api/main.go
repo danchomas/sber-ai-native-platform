@@ -19,6 +19,7 @@ import (
 	"github.com/heinousness/aibi/internal/service/chat"
 	"github.com/heinousness/aibi/internal/service/dashboard"
 	"github.com/heinousness/aibi/internal/service/ingest"
+	"github.com/heinousness/aibi/internal/service/source"
 	transport "github.com/heinousness/aibi/internal/transport/http"
 )
 
@@ -76,6 +77,8 @@ func run() error {
 	catalogSvc := catalog.New(datasetRepo, relationRepo, rawRepo,
 		cfg.Postgres.RawSchema, cfg.Ingest, cfg.Query, log)
 	ingestSvc := ingest.New(datasetRepo, rawRepo, catalogSvc, cfg.Postgres.RawSchema, cfg.Ingest, log)
+	sourceSvc := source.New(sourceRepo, datasetRepo, rawRepo,
+		postgres.NewIntrospector(registry), catalogSvc, registry.Forget, log)
 	dashboardSvc := dashboard.New(dashboardRepo, catalogSvc, rawRepo, cfg.Query, log)
 	agentSvc := agent.New(catalogSvc, rawRepo, sessionRepo, dashboardSvc, model, cfg.Query, log)
 	chatSvc := chat.New(sessionRepo, agentSvc, log)
@@ -86,6 +89,7 @@ func run() error {
 		Version:    version,
 		Ingest:     ingestSvc,
 		Catalog:    catalogSvc,
+		Sources:    sourceSvc,
 		Chat:       chatSvc,
 		Dashboards: dashboardSvc,
 		Executor:   rawRepo,

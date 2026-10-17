@@ -19,6 +19,7 @@ type Deps struct {
 	Version    string
 	Ingest     handler.Ingester
 	Catalog    handler.Catalog
+	Sources    handler.Sources
 	Chat       handler.Chat
 	Dashboards handler.Dashboards
 	Executor   handler.Executor
@@ -28,6 +29,7 @@ type Deps struct {
 
 func NewRouter(d Deps) http.Handler {
 	datasets := handler.NewDataset(d.Ingest, d.Catalog)
+	sources := handler.NewSource(d.Sources)
 	chat := handler.NewChat(d.Chat)
 	dashboards := handler.NewDashboard(d.Dashboards)
 	queries := handler.NewQuery(d.Catalog, d.Executor, d.Config.Query)
@@ -56,6 +58,15 @@ func NewRouter(d Deps) http.Handler {
 		})
 
 		api.Get("/catalog/relations", datasets.Relations)
+
+		api.Route("/sources", func(src chi.Router) {
+			src.Use(middleware.MaxBody(1 << 20))
+			src.Get("/", sources.List)
+			src.Post("/", sources.Attach)
+			src.Delete("/{id}", sources.Detach)
+			src.Get("/{id}/tables", sources.Tables)
+			src.Post("/{id}/tables", sources.AttachTable)
+		})
 
 		api.Route("/sessions", func(s chi.Router) {
 			s.Use(middleware.MaxBody(1 << 20))

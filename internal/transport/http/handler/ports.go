@@ -24,6 +24,14 @@ type Catalog interface {
 	Schema() string
 }
 
+type Sources interface {
+	Attach(ctx context.Context, name, dsn string) (*domain.Source, error)
+	List(ctx context.Context) ([]domain.Source, error)
+	Tables(ctx context.Context, id uuid.UUID) ([]domain.ExternalTable, error)
+	AttachTable(ctx context.Context, id uuid.UUID, schema, table, name string) (*domain.Dataset, error)
+	Detach(ctx context.Context, id uuid.UUID) error
+}
+
 type Chat interface {
 	Create(ctx context.Context, title string, datasetIDs []uuid.UUID) (*domain.Session, error)
 	List(ctx context.Context, limit int) ([]domain.Session, error)
