@@ -17,21 +17,35 @@ import (
 const maxDistinctScan = 100_000
 
 type RawDataRepository struct {
-	pool         *pgxpool.Pool
+	registry     *Registry
 	schema       string
 	queryTimeout time.Duration
 }
 
-func NewRawDataRepository(pool *pgxpool.Pool, schema string, queryTimeout time.Duration) *RawDataRepository {
-	return &RawDataRepository{pool: pool, schema: schema, queryTimeout: queryTimeout}
+func NewRawDataRepository(registry *Registry, schema string, queryTimeout time.Duration) *RawDataRepository {
+	return &RawDataRepository{registry: registry, schema: schema, queryTimeout: queryTimeout}
 }
 
 var _ domain.RawDataRepository = (*RawDataRepository)(nil)
 
 func (r *RawDataRepository) Schema() string { return r.schema }
 
+func (r *RawDataRepository) local() *pgxpool.Pool { return r.registry.Local() }
+
 func (r *RawDataRepository) qualified(table string) string {
 	return quoteIdent(r.schema) + "." + quoteIdent(table)
+}
+
+func (r *RawDataRepository) target(ctx context.Context, ref domain.TableRef) (*pgxpool.Pool, string, error) {
+	pool, err := r.registry.For(ctx, ref.SourceID)
+	if err != nil {
+		return nil, "", err
+	}
+	schema := ref.Schema
+	if schema == "" {
+		schema = r.schema
+	}
+	return pool, quoteIdent(schema) + "." + quoteIdent(ref.Table), nil
 }
 
 func (r *RawDataRepository) CreateTable(ctx context.Context, table string, cols []domain.Column) error {
@@ -45,7 +59,7 @@ func (r *RawDataRepository) CreateTable(ctx context.Context, table string, cols 
 	}
 	ddl := fmt.Sprintf("CREATE TABLE %s (\n\t%s\n)", r.qualified(table), strings.Join(defs, ",\n\t"))
 
-	return withTx(ctx, r.pool, func(tx pgx.Tx) error {
+	return withTx(ctx, r.local(), func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("создание таблицы %s: %w", table, mapError(err))
 		}
@@ -64,7 +78,7 @@ func (r *RawDataRepository) CreateTable(ctx context.Context, table string, cols 
 }
 
 func (r *RawDataRepository) DropTable(ctx context.Context, table string) error {
-	_, err := r.pool.Exec(ctx, "DROP TABLE IF EXISTS "+r.qualified(table))
+	_, err := r.local().Exec(ctx, "DROP TABLE IF EXISTS "+r.qualified(table))
 	if err != nil {
 		return fmt.Errorf("удаление таблицы %s: %w", table, mapError(err))
 	}
@@ -79,7 +93,7 @@ func (r *RawDataRepository) CopyRows(ctx context.Context, table string, cols []d
 	for i, c := range cols {
 		names[i] = c.Name
 	}
-	n, err := r.pool.CopyFrom(ctx,
+	n, err := r.local().CopyFrom(ctx,
 		pgx.Identifier{r.schema, table},
 		names,
 		pgx.CopyFromRows(rows),
@@ -91,33 +105,42 @@ func (r *RawDataRepository) CopyRows(ctx context.Context, table string, cols []d
 }
 
 func (r *RawDataRepository) Analyze(ctx context.Context, table string) error {
-	if _, err := r.pool.Exec(ctx, "ANALYZE "+r.qualified(table)); err != nil {
+	if _, err := r.local().Exec(ctx, "ANALYZE "+r.qualified(table)); err != nil {
 		return fmt.Errorf("ANALYZE %s: %w", table, mapError(err))
 	}
 	return nil
 }
 
-func (r *RawDataRepository) RowCount(ctx context.Context, table string) (int64, error) {
-	var n int64
-	if err := r.pool.QueryRow(ctx, "SELECT count(*) FROM "+r.qualified(table)).Scan(&n); err != nil {
-		return 0, fmt.Errorf("подсчёт строк %s: %w", table, mapError(err))
-	}
-	return n, nil
-}
-
-func (r *RawDataRepository) TableSizeBytes(ctx context.Context, table string) (int64, error) {
-	var n int64
-	err := r.pool.QueryRow(ctx,
-		"SELECT pg_total_relation_size($1::regclass)", r.schema+"."+table).Scan(&n)
+func (r *RawDataRepository) RowCount(ctx context.Context, ref domain.TableRef) (int64, error) {
+	pool, rel, err := r.target(ctx, ref)
 	if err != nil {
-		return 0, fmt.Errorf("размер таблицы %s: %w", table, mapError(err))
+		return 0, err
+	}
+	var n int64
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+rel).Scan(&n); err != nil {
+		return 0, fmt.Errorf("подсчёт строк %s: %w", ref.Table, mapError(err))
 	}
 	return n, nil
 }
 
-func (r *RawDataRepository) ProfileColumn(ctx context.Context, table string, col domain.Column, topN int) (*domain.ColumnProfile, error) {
+func (r *RawDataRepository) TableSizeBytes(ctx context.Context, ref domain.TableRef) (int64, error) {
+	pool, rel, err := r.target(ctx, ref)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	if err := pool.QueryRow(ctx, "SELECT pg_total_relation_size($1::regclass)", rel).Scan(&n); err != nil {
+		return 0, fmt.Errorf("размер таблицы %s: %w", ref.Table, mapError(err))
+	}
+	return n, nil
+}
+
+func (r *RawDataRepository) ProfileColumn(ctx context.Context, ref domain.TableRef, col domain.Column, topN int) (*domain.ColumnProfile, error) {
+	pool, rel, err := r.target(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
 	ident := quoteIdent(col.Name)
-	rel := r.qualified(table)
 
 	aggregates := "NULL::double precision, NULL::double precision"
 	if col.Type.IsNumeric() {
@@ -134,14 +157,14 @@ func (r *RawDataRepository) ProfileColumn(ctx context.Context, table string, col
 		  FROM %[2]s`, ident, rel, aggregates)
 
 	p := &domain.ColumnProfile{ProfiledAt: time.Now().UTC()}
-	err := r.pool.QueryRow(ctx, q).Scan(
+	err = pool.QueryRow(ctx, q).Scan(
 		&p.RowCount, &p.NullCount, &p.DistinctCount, &p.MinValue, &p.MaxValue, &p.Mean, &p.StdDev)
 	if err != nil {
-		return nil, fmt.Errorf("профилирование %s.%s: %w", table, col.Name, mapError(err))
+		return nil, fmt.Errorf("профилирование %s.%s: %w", ref.Table, col.Name, mapError(err))
 	}
 
 	if topN > 0 && p.DistinctCount > 0 {
-		top, err := r.topValues(ctx, rel, ident, topN, p.RowCount-p.NullCount)
+		top, err := r.topValues(ctx, pool, rel, ident, topN, p.RowCount-p.NullCount)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +173,7 @@ func (r *RawDataRepository) ProfileColumn(ctx context.Context, table string, col
 	return p, nil
 }
 
-func (r *RawDataRepository) topValues(ctx context.Context, rel, ident string, topN int, notNull int64) ([]domain.ValueFrequency, error) {
+func (r *RawDataRepository) topValues(ctx context.Context, pool *pgxpool.Pool, rel, ident string, topN int, notNull int64) ([]domain.ValueFrequency, error) {
 	q := fmt.Sprintf(`
 		SELECT %[1]s::text AS value, count(*) AS cnt
 		  FROM %[2]s
@@ -159,7 +182,7 @@ func (r *RawDataRepository) topValues(ctx context.Context, rel, ident string, to
 		 ORDER BY cnt DESC, 1
 		 LIMIT %[3]d`, ident, rel, topN)
 
-	rows, err := r.pool.Query(ctx, q)
+	rows, err := pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("топ значений: %w", mapError(err))
 	}
@@ -179,16 +202,20 @@ func (r *RawDataRepository) topValues(ctx context.Context, rel, ident string, to
 	return out, mapError(rows.Err())
 }
 
-func (r *RawDataRepository) TimeSpan(ctx context.Context, table string, col domain.Column) (*domain.TimeSpan, error) {
+func (r *RawDataRepository) TimeSpan(ctx context.Context, ref domain.TableRef, col domain.Column) (*domain.TimeSpan, error) {
 	if !col.Type.IsTemporal() {
 		return nil, domain.NewValidationError("column", "колонка не является временной")
 	}
+	pool, rel, err := r.target(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
 	q := fmt.Sprintf("SELECT min(%[1]s)::timestamptz, max(%[1]s)::timestamptz FROM %[2]s",
-		quoteIdent(col.Name), r.qualified(table))
+		quoteIdent(col.Name), rel)
 
 	span := &domain.TimeSpan{Column: col.Name}
-	if err := r.pool.QueryRow(ctx, q).Scan(&span.From, &span.To); err != nil {
-		return nil, fmt.Errorf("временной охват %s.%s: %w", table, col.Name, mapError(err))
+	if err := pool.QueryRow(ctx, q).Scan(&span.From, &span.To); err != nil {
+		return nil, fmt.Errorf("временной охват %s.%s: %w", ref.Table, col.Name, mapError(err))
 	}
 	if span.From != nil && span.To != nil {
 		span.Days = int(span.To.Sub(*span.From).Hours() / 24)
@@ -196,9 +223,13 @@ func (r *RawDataRepository) TimeSpan(ctx context.Context, table string, col doma
 	return span, nil
 }
 
-func (r *RawDataRepository) DuplicateRows(ctx context.Context, table string, cols []domain.Column) (int64, error) {
+func (r *RawDataRepository) DuplicateRows(ctx context.Context, ref domain.TableRef, cols []domain.Column) (int64, error) {
 	if len(cols) == 0 {
 		return 0, nil
+	}
+	pool, rel, err := r.target(ctx, ref)
+	if err != nil {
+		return 0, err
 	}
 	idents := make([]string, len(cols))
 	for i, c := range cols {
@@ -207,35 +238,54 @@ func (r *RawDataRepository) DuplicateRows(ctx context.Context, table string, col
 	q := fmt.Sprintf(`
 		SELECT coalesce(sum(cnt - 1), 0)::bigint
 		  FROM (SELECT count(*) AS cnt FROM %s GROUP BY %s HAVING count(*) > 1) d`,
-		r.qualified(table), strings.Join(idents, ", "))
+		rel, strings.Join(idents, ", "))
 
 	var n int64
-	if err := r.pool.QueryRow(ctx, q).Scan(&n); err != nil {
-		return 0, fmt.Errorf("поиск дубликатов %s: %w", table, mapError(err))
+	if err := pool.QueryRow(ctx, q).Scan(&n); err != nil {
+		return 0, fmt.Errorf("поиск дубликатов %s: %w", ref.Table, mapError(err))
 	}
 	return n, nil
 }
 
-func (r *RawDataRepository) Sample(ctx context.Context, table string, limit int) (*domain.ResultSet, error) {
+func (r *RawDataRepository) Sample(ctx context.Context, ref domain.TableRef, limit int) (*domain.ResultSet, error) {
 	if limit <= 0 {
 		limit = 20
 	}
-	q := fmt.Sprintf("SELECT * FROM %s LIMIT %d", r.qualified(table), limit)
-	return r.Query(ctx, q, limit)
+	_, rel, err := r.target(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	schema := ref.Schema
+	if schema == "" {
+		schema = r.schema
+	}
+	q := fmt.Sprintf("SELECT * FROM %s LIMIT %d", rel, limit)
+	return r.Query(ctx, domain.QueryTarget{SourceID: ref.SourceID, Schemas: []string{schema}}, q, limit)
 }
 
 func (r *RawDataRepository) ValueOverlap(ctx context.Context, left, right domain.TableRef) (float64, int64, error) {
+	if !left.SameSource(right) {
+		return 0, 0, nil
+	}
+	pool, leftRel, err := r.target(ctx, left)
+	if err != nil {
+		return 0, 0, err
+	}
+	_, rightRel, err := r.target(ctx, right)
+	if err != nil {
+		return 0, 0, err
+	}
 	q := fmt.Sprintf(`
 		WITH l AS (SELECT DISTINCT %[1]s::text AS v FROM %[2]s WHERE %[1]s IS NOT NULL LIMIT %[5]d),
 		     r AS (SELECT DISTINCT %[3]s::text AS v FROM %[4]s WHERE %[3]s IS NOT NULL LIMIT %[5]d)
 		SELECT (SELECT count(*) FROM l),
 		       (SELECT count(*) FROM l JOIN r USING (v))`,
-		quoteIdent(left.Column), quoteIdent(left.Schema)+"."+quoteIdent(left.Table),
-		quoteIdent(right.Column), quoteIdent(right.Schema)+"."+quoteIdent(right.Table),
+		quoteIdent(left.Column), leftRel,
+		quoteIdent(right.Column), rightRel,
 		maxDistinctScan)
 
 	var total, matched int64
-	if err := r.pool.QueryRow(ctx, q).Scan(&total, &matched); err != nil {
+	if err := pool.QueryRow(ctx, q).Scan(&total, &matched); err != nil {
 		return 0, 0, fmt.Errorf("пересечение значений: %w", mapError(err))
 	}
 	if total == 0 {
@@ -244,13 +294,18 @@ func (r *RawDataRepository) ValueOverlap(ctx context.Context, left, right domain
 	return float64(matched) / float64(total), matched, nil
 }
 
-func (r *RawDataRepository) Query(ctx context.Context, sql string, maxRows int) (*domain.ResultSet, error) {
+func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error) {
 	if maxRows <= 0 {
 		maxRows = 1000
 	}
 	started := time.Now()
 
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{
+	pool, err := r.registry.For(ctx, target.SourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{
 		AccessMode: pgx.ReadOnly,
 		IsoLevel:   pgx.ReadCommitted,
 	})
@@ -266,8 +321,10 @@ func (r *RawDataRepository) Query(ctx context.Context, sql string, maxRows int) 
 		}
 	}
 
-	if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+quoteIdent(r.schema)); err != nil {
-		return nil, fmt.Errorf("установка search_path: %w", mapError(err))
+	if path := searchPath(target.Schemas, r.schema); path != "" {
+		if _, err := tx.Exec(ctx, "SET LOCAL search_path TO "+path); err != nil {
+			return nil, fmt.Errorf("установка search_path: %w", mapError(err))
+		}
 	}
 
 	rows, err := tx.Query(ctx, sql)
@@ -301,8 +358,12 @@ func (r *RawDataRepository) Query(ctx context.Context, sql string, maxRows int) 
 	return rs, nil
 }
 
-func (r *RawDataRepository) ExplainCost(ctx context.Context, sql string) (float64, error) {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
+func (r *RawDataRepository) ExplainCost(ctx context.Context, target domain.QueryTarget, sql string) (float64, error) {
+	pool, err := r.registry.For(ctx, target.SourceID)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return 0, mapError(err)
 	}
@@ -322,6 +383,28 @@ func (r *RawDataRepository) ExplainCost(ctx context.Context, sql string) (float6
 		return 0, nil
 	}
 	return plans[0].Plan.TotalCost, nil
+}
+
+func searchPath(schemas []string, fallback string) string {
+	if len(schemas) == 0 {
+		if fallback == "" {
+			return ""
+		}
+		schemas = []string{fallback}
+	}
+	quoted := make([]string, 0, len(schemas))
+	seen := make(map[string]struct{}, len(schemas))
+	for _, s := range schemas {
+		if s == "" {
+			continue
+		}
+		if _, ok := seen[s]; ok {
+			continue
+		}
+		seen[s] = struct{}{}
+		quoted = append(quoted, quoteIdent(s))
+	}
+	return strings.Join(quoted, ", ")
 }
 
 func queryError(err error) error {

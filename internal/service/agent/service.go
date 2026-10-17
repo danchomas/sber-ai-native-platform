@@ -21,12 +21,12 @@ const resultRowsForModel = 30
 type Catalog interface {
 	List(ctx context.Context) ([]domain.Dataset, error)
 	Relations(ctx context.Context) ([]domain.Relation, error)
-	Tables(ctx context.Context) ([]string, error)
+	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
 }
 
 type Executor interface {
-	Query(ctx context.Context, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
 }
 
 type Dashboards interface {
@@ -241,12 +241,12 @@ func (s *Service) queryAnswer(
 	question string,
 	p *plan,
 ) *domain.Answer {
-	policy, err := s.policy(ctx)
+	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
 		return failure("Не удалось подготовить проверку запроса. Повторите вопрос.", err)
 	}
 
-	execution, err := s.runQuery(ctx, schemaContext, question, p.SQL, policy)
+	execution, err := s.runQuery(ctx, schemaContext, question, p.SQL, scopes)
 	if err != nil {
 		if errors.Is(err, domain.ErrQueryTimeout) {
 			return &domain.Answer{
@@ -290,7 +290,7 @@ func (s *Service) dashboardAnswer(
 	question string,
 	p *plan,
 ) *domain.Answer {
-	policy, err := s.policy(ctx)
+	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
 		return failure("Не удалось подготовить проверку запросов дашборда.", err)
 	}
@@ -305,7 +305,7 @@ func (s *Service) dashboardAnswer(
 		if strings.TrimSpace(w.SQL) == "" {
 			continue
 		}
-		execution, err := s.runQuery(ctx, schemaContext, orDefault(w.Question, question), w.SQL, policy)
+		execution, err := s.runQuery(ctx, schemaContext, orDefault(w.Question, question), w.SQL, scopes)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("Виджет «%s» не построен: %s",
 				orDefault(w.Title, fmt.Sprintf("№%d", i+1)), humanReason(err)))
@@ -367,13 +367,14 @@ type execution struct {
 	sql      string
 	result   *domain.ResultSet
 	tables   []string
+	scope    domain.Scope
 	warnings []string
 }
 
 func (s *Service) runQuery(
 	ctx context.Context,
 	schemaContext, question, sql string,
-	policy sqlguard.Policy,
+	scopes []domain.Scope,
 ) (*execution, error) {
 	var lastErr error
 
@@ -387,13 +388,13 @@ func (s *Service) runQuery(
 			s.log.DebugContext(ctx, "SQL переписан после ошибки", "attempt", attempt)
 		}
 
-		checked, err := sqlguard.Validate(sql, policy)
+		scope, checked, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows)
 		if err != nil {
 			lastErr = err
 			continue
 		}
 
-		result, err := s.exec.Query(ctx, checked.SQL, s.cfg.MaxRows)
+		result, err := s.exec.Query(ctx, scope.Target, checked.SQL, s.cfg.MaxRows)
 		if err != nil {
 			if errors.Is(err, domain.ErrQueryTimeout) || ctx.Err() != nil {
 				return nil, err
@@ -407,7 +408,10 @@ func (s *Service) runQuery(
 			warnings = append(warnings,
 				fmt.Sprintf("Показаны первые %d строк результата.", len(result.Rows)))
 		}
-		return &execution{sql: sql, result: result, tables: checked.Tables, warnings: warnings}, nil
+		return &execution{
+			sql: sql, result: result, tables: checked.Tables,
+			scope: scope, warnings: warnings,
+		}, nil
 	}
 	return nil, lastErr
 }
@@ -452,14 +456,6 @@ func (s *Service) narrate(ctx context.Context, question, title string, rs *domai
 		return fallbackResultText(rs)
 	}
 	return strings.TrimSpace(text)
-}
-
-func (s *Service) policy(ctx context.Context) (sqlguard.Policy, error) {
-	tables, err := s.catalog.Tables(ctx)
-	if err != nil {
-		return sqlguard.Policy{}, err
-	}
-	return sqlguard.NewPolicy(s.catalog.Schema(), tables, s.cfg.MaxRows), nil
 }
 
 func fallbackResultText(rs *domain.ResultSet) string {

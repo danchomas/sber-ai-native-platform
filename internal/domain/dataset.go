@@ -47,6 +47,10 @@ const (
 type Dataset struct {
 	ID          uuid.UUID     `json:"id"`
 	Name        string        `json:"name"`
+	Origin      DatasetOrigin `json:"origin"`
+	SourceID    *uuid.UUID    `json:"source_id,omitempty"`
+	SourceName  string        `json:"source_name,omitempty"`
+	Schema      string        `json:"schema"`
 	TableName   string        `json:"table_name"`
 	SourceFile  string        `json:"source_file"`
 	Delimiter   string        `json:"delimiter"`
@@ -61,6 +65,12 @@ type Dataset struct {
 }
 
 func (d *Dataset) Ready() bool { return d.Status == DatasetStatusReady }
+
+func (d *Dataset) Attached() bool { return d.Origin == OriginAttached }
+
+func (d *Dataset) Ref() TableRef {
+	return TableRef{SourceID: d.SourceID, Schema: d.Schema, Table: d.TableName}
+}
 
 func (d *Dataset) Column(name string) (Column, bool) {
 	for _, c := range d.Columns {
@@ -140,9 +150,21 @@ type Relation struct {
 }
 
 type TableRef struct {
-	Schema string
-	Table  string
-	Column string
+	SourceID *uuid.UUID
+	Schema   string
+	Table    string
+	Column   string
+}
+
+func (r TableRef) SameSource(other TableRef) bool {
+	switch {
+	case r.SourceID == nil && other.SourceID == nil:
+		return true
+	case r.SourceID == nil || other.SourceID == nil:
+		return false
+	default:
+		return *r.SourceID == *other.SourceID
+	}
 }
 
 type Profile struct {

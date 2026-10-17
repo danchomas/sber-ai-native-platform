@@ -26,6 +26,7 @@ type Service struct {
 	datasets domain.DatasetRepository
 	raw      domain.RawDataRepository
 	profiler Profiler
+	schema   string
 	cfg      config.Ingest
 	log      *slog.Logger
 }
@@ -34,10 +35,14 @@ func New(
 	datasets domain.DatasetRepository,
 	raw domain.RawDataRepository,
 	profiler Profiler,
+	schema string,
 	cfg config.Ingest,
 	log *slog.Logger,
 ) *Service {
-	return &Service{datasets: datasets, raw: raw, profiler: profiler, cfg: cfg, log: log}
+	return &Service{
+		datasets: datasets, raw: raw, profiler: profiler,
+		schema: schema, cfg: cfg, log: log,
+	}
 }
 
 type Request struct {
@@ -87,6 +92,8 @@ func (s *Service) Upload(ctx context.Context, req Request) (*Report, error) {
 	dataset := &domain.Dataset{
 		ID:         uuid.New(),
 		Name:       name,
+		Origin:     domain.OriginUploaded,
+		Schema:     s.schema,
 		TableName:  TableName(name, uuid.NewString()[:8]),
 		SourceFile: filepath.Base(req.Filename),
 		Delimiter:  dialect.String(),
@@ -112,7 +119,7 @@ func (s *Service) Upload(ctx context.Context, req Request) (*Report, error) {
 
 	dataset.RowCount = loaded
 	dataset.Status = domain.DatasetStatusReady
-	if physical, err := s.raw.TableSizeBytes(ctx, dataset.TableName); err == nil {
+	if physical, err := s.raw.TableSizeBytes(ctx, dataset.Ref()); err == nil {
 		dataset.SizeBytes = physical
 	}
 	if err := s.datasets.Update(ctx, dataset); err != nil {
@@ -156,8 +163,10 @@ func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	if err := s.raw.DropTable(ctx, dataset.TableName); err != nil {
-		return err
+	if !dataset.Attached() {
+		if err := s.raw.DropTable(ctx, dataset.TableName); err != nil {
+			return err
+		}
 	}
 	if err := s.datasets.Delete(ctx, id); err != nil {
 		return err

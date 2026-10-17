@@ -48,7 +48,8 @@ var forbiddenSchemas = map[string]struct{}{
 }
 
 type Policy struct {
-	Schema        string
+	Schemas       map[string]struct{}
+	DefaultSchema string
 	AllowedTables map[string]struct{}
 	MaxRows       int
 	MaxLength     int
@@ -56,17 +57,53 @@ type Policy struct {
 }
 
 func NewPolicy(schema string, tables []string, maxRows int) Policy {
-	allowed := make(map[string]struct{}, len(tables))
+	qualified := make([]TableName, 0, len(tables))
 	for _, t := range tables {
-		allowed[strings.ToLower(t)] = struct{}{}
+		qualified = append(qualified, TableName{Schema: schema, Table: t})
+	}
+	return NewSourcePolicy(schema, qualified, maxRows)
+}
+
+type TableName struct {
+	Schema string
+	Table  string
+}
+
+func (t TableName) String() string {
+	return strings.ToLower(t.Schema) + "." + strings.ToLower(t.Table)
+}
+
+func NewSourcePolicy(defaultSchema string, tables []TableName, maxRows int) Policy {
+	allowed := make(map[string]struct{}, len(tables))
+	schemas := make(map[string]struct{}, len(tables)+1)
+	for _, t := range tables {
+		allowed[t.String()] = struct{}{}
+		schemas[strings.ToLower(t.Schema)] = struct{}{}
+	}
+	if defaultSchema != "" {
+		schemas[strings.ToLower(defaultSchema)] = struct{}{}
 	}
 	return Policy{
-		Schema:        schema,
+		Schemas:       schemas,
+		DefaultSchema: defaultSchema,
 		AllowedTables: allowed,
 		MaxRows:       maxRows,
 		MaxLength:     20_000,
 		MaxJoins:      10,
 	}
+}
+
+func (p Policy) SchemaList() []string {
+	out := make([]string, 0, len(p.Schemas))
+	if p.DefaultSchema != "" {
+		out = append(out, p.DefaultSchema)
+	}
+	for s := range p.Schemas {
+		if !strings.EqualFold(s, p.DefaultSchema) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 type Result struct {
@@ -222,15 +259,19 @@ func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 		if strings.HasPrefix(table, "pg_") {
 			return nil, nil, reject(fmt.Sprintf("доступ к системному объекту %s запрещён", table))
 		}
-		if schema != "" && schema != strings.ToLower(p.Schema) {
-			return nil, nil, reject(fmt.Sprintf("схема %s недоступна, данные каталога лежат в %s", schema, p.Schema))
+		if schema == "" {
+			schema = strings.ToLower(p.DefaultSchema)
 		}
-		if _, ok := p.AllowedTables[table]; !ok {
-			return nil, nil, reject(fmt.Sprintf("таблица %q отсутствует в каталоге загруженных данных", table))
+		if _, ok := p.Schemas[schema]; !ok {
+			return nil, nil, reject(fmt.Sprintf("схема %s недоступна по этому вопросу", schema))
 		}
-		if _, dup := seen[table]; !dup {
-			seen[table] = struct{}{}
-			tables = append(tables, table)
+		qualified := schema + "." + table
+		if _, ok := p.AllowedTables[qualified]; !ok {
+			return nil, nil, reject(fmt.Sprintf("таблица %q отсутствует в каталоге данных", qualified))
+		}
+		if _, dup := seen[qualified]; !dup {
+			seen[qualified] = struct{}{}
+			tables = append(tables, qualified)
 		}
 	}
 
@@ -298,4 +339,35 @@ func countJoins(tokens []token) int {
 
 func reject(reason string) error {
 	return fmt.Errorf("%w: %s", domain.ErrUnsafeQuery, reason)
+}
+
+func PolicyFor(sc domain.Scope, defaultSchema string, maxRows int) Policy {
+	tables := make([]TableName, 0, len(sc.Datasets))
+	for _, d := range sc.Datasets {
+		tables = append(tables, TableName{Schema: d.Schema, Table: d.TableName})
+	}
+	if !sc.Local() && len(sc.Target.Schemas) > 0 {
+		defaultSchema = sc.Target.Schemas[0]
+	}
+	return NewSourcePolicy(defaultSchema, tables, maxRows)
+}
+
+func ResolveScope(sql string, scopes []domain.Scope, defaultSchema string, maxRows int) (domain.Scope, Result, error) {
+	var firstErr error
+	for _, sc := range scopes {
+		checked, err := Validate(sql, PolicyFor(sc, defaultSchema, maxRows))
+		if err == nil {
+			return sc, checked, nil
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr == nil {
+		firstErr = reject("нет доступных данных для запроса")
+	}
+	if len(scopes) > 1 {
+		firstErr = fmt.Errorf("%w (таблицы разных источников нельзя соединить одним запросом)", firstErr)
+	}
+	return domain.Scope{}, Result{}, firstErr
 }

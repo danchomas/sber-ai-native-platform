@@ -56,16 +56,47 @@ func (s *Service) Relations(ctx context.Context) ([]domain.Relation, error) {
 	return s.relations.List(ctx)
 }
 
-func (s *Service) Tables(ctx context.Context) ([]string, error) {
+func (s *Service) Scopes(ctx context.Context) ([]domain.Scope, error) {
 	datasets, err := s.datasets.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(datasets))
+
+	order := make([]string, 0, 4)
+	grouped := make(map[string][]domain.Dataset, 4)
 	for _, d := range datasets {
-		if d.Ready() {
-			out = append(out, d.TableName)
+		if !d.Ready() {
+			continue
 		}
+		key := ""
+		if d.SourceID != nil {
+			key = d.SourceID.String()
+		}
+		if _, seen := grouped[key]; !seen {
+			order = append(order, key)
+		}
+		grouped[key] = append(grouped[key], d)
+	}
+
+	out := make([]domain.Scope, 0, len(order))
+	for _, key := range order {
+		group := grouped[key]
+
+		schemas := make([]string, 0, 2)
+		seenSchema := make(map[string]struct{}, 2)
+		for _, d := range group {
+			if _, ok := seenSchema[d.Schema]; ok {
+				continue
+			}
+			seenSchema[d.Schema] = struct{}{}
+			schemas = append(schemas, d.Schema)
+		}
+
+		out = append(out, domain.Scope{
+			SourceName: group[0].SourceName,
+			Target:     domain.QueryTarget{SourceID: group[0].SourceID, Schemas: schemas},
+			Datasets:   group,
+		})
 	}
 	return out, nil
 }
@@ -83,7 +114,7 @@ func (s *Service) Preview(ctx context.Context, id uuid.UUID, limit int) (*domain
 	if limit <= 0 {
 		limit = s.query.PreviewRows
 	}
-	return s.raw.Sample(ctx, dataset.TableName, limit)
+	return s.raw.Sample(ctx, dataset.Ref(), limit)
 }
 
 func (s *Service) ProfileDataset(ctx context.Context, id uuid.UUID) error {
@@ -99,7 +130,7 @@ func (s *Service) ProfileDataset(ctx context.Context, id uuid.UUID) error {
 	for _, col := range dataset.Columns {
 		col := col
 		g.Go(func() error {
-			p, err := s.raw.ProfileColumn(gctx, dataset.TableName, col, s.cfg.ProfileTopValues)
+			p, err := s.raw.ProfileColumn(gctx, dataset.Ref(), col, s.cfg.ProfileTopValues)
 			if err != nil {
 				return fmt.Errorf("колонка %s: %w", col.Name, err)
 			}
@@ -134,7 +165,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, e
 		if !col.Type.IsTemporal() {
 			continue
 		}
-		span, err := s.raw.TimeSpan(ctx, dataset.TableName, col)
+		span, err := s.raw.TimeSpan(ctx, dataset.Ref(), col)
 		if err != nil {
 			s.log.WarnContext(ctx, "временной охват не посчитан",
 				"dataset", dataset.Name, "column", col.Name, "error", err)
@@ -151,7 +182,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, e
 		}
 	}
 
-	if dups, err := s.raw.DuplicateRows(ctx, dataset.TableName, dataset.Columns); err == nil {
+	if dups, err := s.raw.DuplicateRows(ctx, dataset.Ref(), dataset.Columns); err == nil {
 		out.DuplicateRows = dups
 	} else {
 		s.log.WarnContext(ctx, "дубликаты не посчитаны", "dataset", dataset.Name, "error", err)
@@ -161,7 +192,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, e
 		out.Relations = rels
 	}
 
-	if sample, err := s.raw.Sample(ctx, dataset.TableName, 10); err == nil {
+	if sample, err := s.raw.Sample(ctx, dataset.Ref(), 10); err == nil {
 		out.Sample = sample
 	}
 	return out, nil

@@ -6,6 +6,29 @@ import (
 	"github.com/google/uuid"
 )
 
+type SourceRepository interface {
+	Create(ctx context.Context, s *Source) error
+	Update(ctx context.Context, s *Source) error
+	Get(ctx context.Context, id uuid.UUID) (*Source, error)
+	GetByName(ctx context.Context, name string) (*Source, error)
+	List(ctx context.Context) ([]Source, error)
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+type SourceIntrospector interface {
+	Ping(ctx context.Context, s *Source) error
+	Tables(ctx context.Context, s *Source) ([]ExternalTable, error)
+	Columns(ctx context.Context, s *Source, schema, table string) ([]Column, error)
+}
+
+type ExternalTable struct {
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	EstimateRows int64  `json:"estimate_rows"`
+	Attached     bool   `json:"attached"`
+}
+
 type DatasetRepository interface {
 	Create(ctx context.Context, d *Dataset) error
 	Update(ctx context.Context, d *Dataset) error
@@ -32,17 +55,17 @@ type RawDataRepository interface {
 	DropTable(ctx context.Context, table string) error
 	CopyRows(ctx context.Context, table string, cols []Column, rows [][]any) (int64, error)
 	Analyze(ctx context.Context, table string) error
-	RowCount(ctx context.Context, table string) (int64, error)
-	TableSizeBytes(ctx context.Context, table string) (int64, error)
 
-	ProfileColumn(ctx context.Context, table string, col Column, topN int) (*ColumnProfile, error)
-	TimeSpan(ctx context.Context, table string, col Column) (*TimeSpan, error)
-	DuplicateRows(ctx context.Context, table string, cols []Column) (int64, error)
-	Sample(ctx context.Context, table string, limit int) (*ResultSet, error)
+	RowCount(ctx context.Context, ref TableRef) (int64, error)
+	TableSizeBytes(ctx context.Context, ref TableRef) (int64, error)
+	ProfileColumn(ctx context.Context, ref TableRef, col Column, topN int) (*ColumnProfile, error)
+	TimeSpan(ctx context.Context, ref TableRef, col Column) (*TimeSpan, error)
+	DuplicateRows(ctx context.Context, ref TableRef, cols []Column) (int64, error)
+	Sample(ctx context.Context, ref TableRef, limit int) (*ResultSet, error)
 	ValueOverlap(ctx context.Context, left, right TableRef) (share float64, matched int64, err error)
 
-	Query(ctx context.Context, sql string, maxRows int) (*ResultSet, error)
-	ExplainCost(ctx context.Context, sql string) (float64, error)
+	Query(ctx context.Context, target QueryTarget, sql string, maxRows int) (*ResultSet, error)
+	ExplainCost(ctx context.Context, target QueryTarget, sql string) (float64, error)
 }
 
 type SessionRepository interface {

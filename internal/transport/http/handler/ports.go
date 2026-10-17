@@ -20,8 +20,16 @@ type Catalog interface {
 	Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, error)
 	Preview(ctx context.Context, id uuid.UUID, limit int) (*domain.ResultSet, error)
 	Relations(ctx context.Context) ([]domain.Relation, error)
-	Tables(ctx context.Context) ([]string, error)
+	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
+}
+
+type Sources interface {
+	Attach(ctx context.Context, name, dsn string) (*domain.Source, error)
+	List(ctx context.Context) ([]domain.Source, error)
+	Tables(ctx context.Context, id uuid.UUID) ([]domain.ExternalTable, error)
+	AttachTable(ctx context.Context, id uuid.UUID, schema, table, name string) (*domain.Dataset, error)
+	Detach(ctx context.Context, id uuid.UUID) error
 }
 
 type Chat interface {
@@ -40,5 +48,5 @@ type Dashboards interface {
 }
 
 type Executor interface {
-	Query(ctx context.Context, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
 }

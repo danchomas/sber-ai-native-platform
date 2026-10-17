@@ -22,18 +22,23 @@ func NewDatasetRepository(pool *pgxpool.Pool) *DatasetRepository {
 
 var _ domain.DatasetRepository = (*DatasetRepository)(nil)
 
-const datasetColumns = `id, name, table_name, source_file, delimiter, row_count,
-	size_bytes, status, fail_reason, description, created_at, updated_at`
+const datasetColumns = `d.id, d.name, d.origin, d.source_id, COALESCE(s.name, ''),
+	d.schema_name, d.table_name, d.source_file, d.delimiter, d.row_count,
+	d.size_bytes, d.status, d.fail_reason, d.description, d.created_at, d.updated_at`
+
+const datasetFrom = ` FROM datasets d LEFT JOIN sources s ON s.id = d.source_id`
 
 func (r *DatasetRepository) Create(ctx context.Context, d *domain.Dataset) error {
 	const q = `
-		INSERT INTO datasets (id, name, table_name, source_file, delimiter,
-		                      row_count, size_bytes, status, fail_reason, description)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO datasets (id, name, origin, source_id, schema_name, table_name,
+		                      source_file, delimiter, row_count, size_bytes,
+		                      status, fail_reason, description)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING created_at, updated_at`
 	err := r.pool.QueryRow(ctx, q,
-		d.ID, d.Name, d.TableName, d.SourceFile, d.Delimiter,
-		d.RowCount, d.SizeBytes, d.Status, d.FailReason, d.Description,
+		d.ID, d.Name, d.Origin, d.SourceID, d.Schema, d.TableName,
+		d.SourceFile, d.Delimiter, d.RowCount, d.SizeBytes,
+		d.Status, d.FailReason, d.Description,
 	).Scan(&d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("создание датасета: %w", mapError(err))
@@ -70,7 +75,7 @@ func (r *DatasetRepository) SetStatus(ctx context.Context, id uuid.UUID, status 
 }
 
 func (r *DatasetRepository) Get(ctx context.Context, id uuid.UUID) (*domain.Dataset, error) {
-	q := `SELECT ` + datasetColumns + ` FROM datasets WHERE id = $1`
+	q := `SELECT ` + datasetColumns + datasetFrom + ` WHERE d.id = $1`
 	d, err := r.scanOne(ctx, q, id)
 	if err != nil {
 		return nil, err
@@ -84,7 +89,7 @@ func (r *DatasetRepository) Get(ctx context.Context, id uuid.UUID) (*domain.Data
 }
 
 func (r *DatasetRepository) GetByName(ctx context.Context, name string) (*domain.Dataset, error) {
-	q := `SELECT ` + datasetColumns + ` FROM datasets WHERE name = $1`
+	q := `SELECT ` + datasetColumns + datasetFrom + ` WHERE d.name = $1`
 	d, err := r.scanOne(ctx, q, name)
 	if err != nil {
 		return nil, err
@@ -98,7 +103,7 @@ func (r *DatasetRepository) GetByName(ctx context.Context, name string) (*domain
 }
 
 func (r *DatasetRepository) List(ctx context.Context) ([]domain.Dataset, error) {
-	q := `SELECT ` + datasetColumns + ` FROM datasets ORDER BY created_at`
+	q := `SELECT ` + datasetColumns + datasetFrom + ` ORDER BY d.created_at`
 	rows, err := r.pool.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("список датасетов: %w", mapError(err))
@@ -209,7 +214,8 @@ func (r *DatasetRepository) scanOne(ctx context.Context, q string, args ...any) 
 
 func scanDataset(rows pgx.Rows) (*domain.Dataset, error) {
 	var d domain.Dataset
-	err := rows.Scan(&d.ID, &d.Name, &d.TableName, &d.SourceFile, &d.Delimiter,
+	err := rows.Scan(&d.ID, &d.Name, &d.Origin, &d.SourceID, &d.SourceName,
+		&d.Schema, &d.TableName, &d.SourceFile, &d.Delimiter,
 		&d.RowCount, &d.SizeBytes, &d.Status, &d.FailReason, &d.Description,
 		&d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
