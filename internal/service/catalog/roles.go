@@ -3,7 +3,7 @@ package catalog
 import (
 	"strings"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 var (

@@ -3,7 +3,7 @@ package llm
 import (
 	"context"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 type Fallback struct{}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func buildOverviewFacts(schema string, datasets []domain.Dataset, relations []domain.Relation) string {

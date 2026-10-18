@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func testLogger() *slog.Logger {

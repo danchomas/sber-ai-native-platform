@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {

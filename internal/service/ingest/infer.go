@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 var nullTokens = map[string]struct{}{

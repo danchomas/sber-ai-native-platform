@@ -11,8 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/heinousness/aibi/internal/domain"
-	"github.com/heinousness/aibi/internal/logger"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/logger"
 )
 
 type errorBody struct {

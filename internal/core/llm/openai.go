@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 type Client struct {

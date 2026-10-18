@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/logger"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/logger"
 	"github.com/heinousness/aibi/internal/repository/postgres"
 )
 

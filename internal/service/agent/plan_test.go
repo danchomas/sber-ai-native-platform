@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func TestParsePlanQuery(t *testing.T) {

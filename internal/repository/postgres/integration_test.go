@@ -14,13 +14,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/sqlguard"
 	"github.com/heinousness/aibi/internal/repository/postgres"
 	"github.com/heinousness/aibi/internal/service/catalog"
 	"github.com/heinousness/aibi/internal/service/dashboard"
 	"github.com/heinousness/aibi/internal/service/ingest"
-	"github.com/heinousness/aibi/internal/sqlguard"
 )
 
 const testSchema = "raw_itest"

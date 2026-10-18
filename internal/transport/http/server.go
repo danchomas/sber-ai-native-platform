@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/heinousness/aibi/internal/config"
+	"github.com/heinousness/aibi/internal/core/config"
 )
 
 type Server struct {

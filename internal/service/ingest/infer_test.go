@@ -3,7 +3,7 @@ package ingest
 import (
 	"testing"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func TestInferType(t *testing.T) {

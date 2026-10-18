@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 
-	"github.com/heinousness/aibi/internal/logger"
+	"github.com/heinousness/aibi/internal/core/logger"
 )
 
 const RequestIDHeader = "X-Request-Id"

@@ -10,10 +10,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/heinousness/aibi/internal/chart"
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
-	"github.com/heinousness/aibi/internal/sqlguard"
+	"github.com/heinousness/aibi/internal/core/chart"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
 const resultRowsForModel = 30

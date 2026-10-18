@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/service/ingest"
 )
 

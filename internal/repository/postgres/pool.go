@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/heinousness/aibi/internal/config"
+	"github.com/heinousness/aibi/internal/core/config"
 )
 
 type PoolOptions struct {

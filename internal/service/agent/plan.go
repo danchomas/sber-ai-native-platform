@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/domain"
-	"github.com/heinousness/aibi/internal/llm"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/llm"
 )
 
 type plan struct {

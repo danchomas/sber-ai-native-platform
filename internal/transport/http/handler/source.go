@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 type SourceHandler struct {

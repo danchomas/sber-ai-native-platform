@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 const maxTopValuesInContext = 6

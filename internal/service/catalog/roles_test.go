@@ -3,7 +3,7 @@ package catalog
 import (
 	"testing"
 
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 func profile(rows, nulls, distinct int64, top ...string) *domain.ColumnProfile {

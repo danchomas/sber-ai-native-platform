@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
-	"github.com/heinousness/aibi/internal/sqlguard"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
 type QueryHandler struct {

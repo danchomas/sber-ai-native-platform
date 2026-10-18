@@ -6,11 +6,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/web"
 	"github.com/heinousness/aibi/internal/transport/http/handler"
 	"github.com/heinousness/aibi/internal/transport/http/middleware"
-	"github.com/heinousness/aibi/internal/web"
 )
 
 type Deps struct {

@@ -2,7 +2,7 @@
 # PostgreSQL и языковая модель поднимаются рядом в том же compose.
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:18-bookworm
     environment:
       POSTGRES_USER: aibi
       POSTGRES_PASSWORD: aibi
@@ -24,7 +24,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aibi -d aibi"]
       interval: 5s
