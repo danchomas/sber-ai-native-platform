@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -69,7 +70,7 @@ func (r *DatasetRepository) SetStatus(ctx context.Context, id uuid.UUID, status 
 		return fmt.Errorf("смена статуса датасета: %w", mapError(err))
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }
@@ -138,7 +139,7 @@ func (r *DatasetRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		return fmt.Errorf("удаление датасета: %w", mapError(err))
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }
@@ -180,7 +181,7 @@ func (r *DatasetRepository) SaveColumnProfile(ctx context.Context, columnID uuid
 		return fmt.Errorf("сохранение профиля колонки: %w", mapError(err))
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }
@@ -192,7 +193,7 @@ func (r *DatasetRepository) SaveColumnRole(ctx context.Context, columnID uuid.UU
 		return fmt.Errorf("сохранение роли колонки: %w", mapError(err))
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }
@@ -207,7 +208,7 @@ func (r *DatasetRepository) scanOne(ctx context.Context, q string, args ...any) 
 		if err := rows.Err(); err != nil {
 			return nil, mapError(err)
 		}
-		return nil, domain.ErrNotFound
+		return nil, apperr.ErrNotFound
 	}
 	return scanDataset(rows)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -50,7 +51,7 @@ func (r *RawDataRepository) target(ctx context.Context, ref domain.TableRef) (*p
 
 func (r *RawDataRepository) CreateTable(ctx context.Context, table string, cols []domain.Column) error {
 	if len(cols) == 0 {
-		return domain.NewValidationError("columns", "нет колонок для создания таблицы")
+		return apperr.NewValidationError("columns", "нет колонок для создания таблицы")
 	}
 
 	defs := make([]string, 0, len(cols))
@@ -204,7 +205,7 @@ func (r *RawDataRepository) topValues(ctx context.Context, pool *pgxpool.Pool, r
 
 func (r *RawDataRepository) TimeSpan(ctx context.Context, ref domain.TableRef, col domain.Column) (*domain.TimeSpan, error) {
 	if !col.Type.IsTemporal() {
-		return nil, domain.NewValidationError("column", "колонка не является временной")
+		return nil, apperr.NewValidationError("column", "колонка не является временной")
 	}
 	pool, rel, err := r.target(ctx, ref)
 	if err != nil {
@@ -409,8 +410,8 @@ func searchPath(schemas []string, fallback string) string {
 
 func queryError(err error) error {
 	mapped := mapError(err)
-	if errors.Is(mapped, domain.ErrQueryTimeout) || errors.Is(err, context.DeadlineExceeded) {
-		return domain.ErrQueryTimeout
+	if errors.Is(mapped, apperr.ErrQueryTimeout) || errors.Is(err, context.DeadlineExceeded) {
+		return apperr.ErrQueryTimeout
 	}
 	return mapped
 }

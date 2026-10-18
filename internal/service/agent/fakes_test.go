@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -172,7 +173,7 @@ func (m *memorySessions) GetSession(_ context.Context, id uuid.UUID) (*domain.Se
 	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
 	if !ok {
-		return nil, domain.ErrNotFound
+		return nil, apperr.ErrNotFound
 	}
 	return s, nil
 }

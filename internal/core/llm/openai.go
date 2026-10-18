@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -125,7 +126,7 @@ func (c *Client) Complete(ctx context.Context, req domain.Completion) (string, e
 			break
 		}
 	}
-	return "", fmt.Errorf("%w: %v", domain.ErrLLMUnavailable, lastErr)
+	return "", fmt.Errorf("%w: %v", apperr.ErrLLMUnavailable, lastErr)
 }
 
 func (c *Client) do(ctx context.Context, body []byte) (text string, retryable bool, err error) {
@@ -180,13 +181,13 @@ func (c *Client) Ping(ctx context.Context) error {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", domain.ErrLLMUnavailable, err)
+		return fmt.Errorf("%w: %v", apperr.ErrLLMUnavailable, err)
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%w: %s", domain.ErrLLMUnavailable, resp.Status)
+		return fmt.Errorf("%w: %s", apperr.ErrLLMUnavailable, resp.Status)
 	}
 	return nil
 }

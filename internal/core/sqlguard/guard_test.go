@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/apperr"
 )
 
 func testPolicy() Policy {
@@ -71,7 +71,7 @@ func TestValidateRejectsUnsafeQueries(t *testing.T) {
 			if err == nil {
 				t.Fatal("ожидалось отклонение запроса")
 			}
-			if !errors.Is(err, domain.ErrUnsafeQuery) {
+			if !errors.Is(err, apperr.ErrUnsafeQuery) {
 				t.Fatalf("ожидалась ErrUnsafeQuery, получено: %v", err)
 			}
 		})

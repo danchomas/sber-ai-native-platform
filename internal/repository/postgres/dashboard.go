@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -121,7 +122,7 @@ func (r *DashboardRepository) Delete(ctx context.Context, id uuid.UUID) error {
 		return mapError(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }

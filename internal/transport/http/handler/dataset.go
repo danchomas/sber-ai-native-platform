@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/service/ingest"
 )
 
@@ -71,7 +71,7 @@ func (h *Dataset) Preview(w http.ResponseWriter, r *http.Request) {
 func (h *Dataset) Upload(w http.ResponseWriter, r *http.Request) {
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		writeError(w, r, domain.NewValidationError("file", "ожидается файл в поле file"))
+		writeError(w, r, apperr.NewValidationError("file", "ожидается файл в поле file"))
 		return
 	}
 	defer func() { _ = file.Close() }()
@@ -79,7 +79,7 @@ func (h *Dataset) Upload(w http.ResponseWriter, r *http.Request) {
 	filename := header.Filename
 	if ext := strings.ToLower(filename); !strings.HasSuffix(ext, ".csv") &&
 		!strings.HasSuffix(ext, ".tsv") && !strings.HasSuffix(ext, ".txt") {
-		writeError(w, r, domain.NewValidationError("file", "поддерживаются файлы CSV/TSV"))
+		writeError(w, r, apperr.NewValidationError("file", "поддерживаются файлы CSV/TSV"))
 		return
 	}
 

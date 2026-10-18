@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -109,7 +110,7 @@ func (s *Service) Preview(ctx context.Context, id uuid.UUID, limit int) (*domain
 		return nil, err
 	}
 	if !dataset.Ready() {
-		return nil, domain.ErrDatasetNotReady
+		return nil, apperr.ErrDatasetNotReady
 	}
 	if limit <= 0 {
 		limit = s.query.PreviewRows
@@ -156,7 +157,7 @@ func (s *Service) Profile(ctx context.Context, id uuid.UUID) (*domain.Profile, e
 		return nil, err
 	}
 	if !dataset.Ready() {
-		return nil, domain.ErrDatasetNotReady
+		return nil, apperr.ErrDatasetNotReady
 	}
 
 	out := &domain.Profile{Dataset: *dataset}

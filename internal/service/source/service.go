@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -46,13 +47,13 @@ func (s *Service) Attach(ctx context.Context, name, dsn string) (*domain.Source,
 	name = strings.TrimSpace(name)
 	dsn = strings.TrimSpace(dsn)
 	if name == "" {
-		return nil, domain.NewValidationError("name", "имя источника не может быть пустым")
+		return nil, apperr.NewValidationError("name", "имя источника не может быть пустым")
 	}
 	if dsn == "" {
-		return nil, domain.NewValidationError("dsn", "строка подключения не может быть пустой")
+		return nil, apperr.NewValidationError("dsn", "строка подключения не может быть пустой")
 	}
 	if _, err := s.sources.GetByName(ctx, name); err == nil {
-		return nil, fmt.Errorf("источник %q: %w", name, domain.ErrAlreadyExists)
+		return nil, fmt.Errorf("источник %q: %w", name, apperr.ErrAlreadyExists)
 	}
 
 	src := &domain.Source{
@@ -110,7 +111,7 @@ func (s *Service) AttachTable(ctx context.Context, id uuid.UUID, schema, table, 
 		return nil, err
 	}
 	if strings.TrimSpace(schema) == "" || strings.TrimSpace(table) == "" {
-		return nil, domain.NewValidationError("table", "нужно указать схему и имя таблицы")
+		return nil, apperr.NewValidationError("table", "нужно указать схему и имя таблицы")
 	}
 
 	columns, err := s.introspect.Columns(ctx, src, schema, table)
@@ -219,7 +220,7 @@ func (s *Service) uniqueName(ctx context.Context, wanted, table, sourceName stri
 			return c, nil
 		}
 	}
-	return "", domain.NewValidationError("name", "не удалось подобрать свободное имя датасета")
+	return "", apperr.NewValidationError("name", "не удалось подобрать свободное имя датасета")
 }
 
 func (s *Service) markFailed(ctx context.Context, src *domain.Source, cause error) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -185,7 +186,7 @@ func (s *Service) datasetName(ctx context.Context, req Request) (string, error) 
 	}
 	base = strings.TrimSpace(base)
 	if base == "" {
-		return "", domain.NewValidationError("name", "не удалось определить имя датасета")
+		return "", apperr.NewValidationError("name", "не удалось определить имя датасета")
 	}
 	if len([]rune(base)) > 120 {
 		base = string([]rune(base)[:120])
@@ -194,7 +195,7 @@ func (s *Service) datasetName(ctx context.Context, req Request) (string, error) 
 	candidate := base
 	for i := 2; i < 100; i++ {
 		_, err := s.datasets.GetByName(ctx, candidate)
-		if errors.Is(err, domain.ErrNotFound) {
+		if errors.Is(err, apperr.ErrNotFound) {
 			return candidate, nil
 		}
 		if err != nil {
@@ -202,12 +203,12 @@ func (s *Service) datasetName(ctx context.Context, req Request) (string, error) 
 		}
 		candidate = fmt.Sprintf("%s (%d)", base, i)
 	}
-	return "", domain.NewValidationError("name", "слишком много датасетов с таким именем")
+	return "", apperr.NewValidationError("name", "слишком много датасетов с таким именем")
 }
 
 func (s *Service) spool(r io.Reader) (*os.File, int64, error) {
 	if r == nil {
-		return nil, 0, domain.NewValidationError("file", "файл не передан")
+		return nil, 0, apperr.NewValidationError("file", "файл не передан")
 	}
 
 	f, err := os.CreateTemp("", "aibi-upload-*.csv")
@@ -225,13 +226,13 @@ func (s *Service) spool(r io.Reader) (*os.File, int64, error) {
 	if written > limit {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
-		return nil, 0, domain.NewValidationError("file",
+		return nil, 0, apperr.NewValidationError("file",
 			fmt.Sprintf("размер превышает предел %d МБ", limit>>20))
 	}
 	if written == 0 {
 		_ = f.Close()
 		_ = os.Remove(f.Name())
-		return nil, 0, domain.NewValidationError("file", "файл пуст")
+		return nil, 0, apperr.NewValidationError("file", "файл пуст")
 	}
 	return f, written, nil
 }
@@ -256,10 +257,10 @@ func (s *Service) inferSchema(f *os.File, d Dialect) ([]string, []ValueParser, [
 	reader := NewReader(f, d)
 	header, err := reader.Read()
 	if err != nil {
-		return nil, nil, nil, domain.NewValidationError("file", "не удалось прочитать заголовок CSV: "+err.Error())
+		return nil, nil, nil, apperr.NewValidationError("file", "не удалось прочитать заголовок CSV: "+err.Error())
 	}
 	if len(header) == 0 {
-		return nil, nil, nil, domain.NewValidationError("file", "пустой заголовок CSV")
+		return nil, nil, nil, apperr.NewValidationError("file", "пустой заголовок CSV")
 	}
 
 	samples := make([][]string, len(header))
@@ -420,7 +421,7 @@ func (s *Service) abort(ctx context.Context, d *domain.Dataset, cause error) err
 		s.log.ErrorContext(cleanup, "не удалось удалить таблицу после сбоя загрузки",
 			"table", d.TableName, "error", err)
 	}
-	if err := s.datasets.Delete(cleanup, d.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+	if err := s.datasets.Delete(cleanup, d.ID); err != nil && !errors.Is(err, apperr.ErrNotFound) {
 		s.log.ErrorContext(cleanup, "не удалось удалить метаданные после сбоя загрузки",
 			"dataset", d.Name, "error", err)
 	}

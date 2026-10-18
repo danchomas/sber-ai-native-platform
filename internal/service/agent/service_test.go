@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -146,7 +147,7 @@ func TestAskGivesUpAfterRepairs(t *testing.T) {
 
 func TestAskQueryTimeoutExplained(t *testing.T) {
 	model := newScriptedLLM(`{"intent":"query","sql":"SELECT * FROM raw.ds_orders"}`)
-	exec := &fakeExecutor{err: domain.ErrQueryTimeout}
+	exec := &fakeExecutor{err: apperr.ErrQueryTimeout}
 	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "выгрузи всё")
@@ -184,7 +185,7 @@ func TestAskOverviewUsesModelText(t *testing.T) {
 
 func TestAskFallsBackWhenModelUnavailable(t *testing.T) {
 	model := newScriptedLLM()
-	model.err = domain.ErrLLMUnavailable
+	model.err = apperr.ErrLLMUnavailable
 
 	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{}, &fakeDashboards{})
 
@@ -283,10 +284,10 @@ func TestAskWithoutDatasets(t *testing.T) {
 func TestAskValidatesQuestion(t *testing.T) {
 	svc, sessionID, _ := newTestAgent(t, newScriptedLLM(), &fakeExecutor{}, &fakeDashboards{})
 
-	if _, err := svc.Ask(context.Background(), sessionID, "   "); !errors.Is(err, domain.ErrValidation) {
+	if _, err := svc.Ask(context.Background(), sessionID, "   "); !errors.Is(err, apperr.ErrValidation) {
 		t.Fatalf("пустой вопрос должен отклоняться: %v", err)
 	}
-	if _, err := svc.Ask(context.Background(), uuid.New(), "вопрос"); !errors.Is(err, domain.ErrNotFound) {
+	if _, err := svc.Ask(context.Background(), uuid.New(), "вопрос"); !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("неизвестная сессия должна отклоняться: %v", err)
 	}
 }

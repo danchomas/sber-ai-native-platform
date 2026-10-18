@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -338,7 +339,7 @@ func countJoins(tokens []token) int {
 }
 
 func reject(reason string) error {
-	return fmt.Errorf("%w: %s", domain.ErrUnsafeQuery, reason)
+	return fmt.Errorf("%w: %s", apperr.ErrUnsafeQuery, reason)
 }
 
 func PolicyFor(sc domain.Scope, defaultSchema string, maxRows int) Policy {

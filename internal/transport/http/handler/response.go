@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/logger"
 )
 
@@ -48,7 +48,7 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 	body := errorBody{Error: errorPayload{Code: code, Message: message}}
 
-	var vErr *domain.ValidationError
+	var vErr *apperr.ValidationError
 	if errors.As(err, &vErr) {
 		body.Error.Field = vErr.Field
 	}
@@ -60,21 +60,21 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 func classify(err error) (status int, code, message string) {
 	switch {
-	case errors.Is(err, domain.ErrNotFound):
+	case errors.Is(err, apperr.ErrNotFound):
 		return http.StatusNotFound, "not_found", "Объект не найден"
-	case errors.Is(err, domain.ErrAlreadyExists):
+	case errors.Is(err, apperr.ErrAlreadyExists):
 		return http.StatusConflict, "already_exists", "Объект уже существует"
-	case errors.Is(err, domain.ErrValidation):
+	case errors.Is(err, apperr.ErrValidation):
 		return http.StatusBadRequest, "validation", err.Error()
-	case errors.Is(err, domain.ErrUnsafeQuery):
+	case errors.Is(err, apperr.ErrUnsafeQuery):
 		return http.StatusBadRequest, "unsafe_query", err.Error()
-	case errors.Is(err, domain.ErrDatasetNotReady):
+	case errors.Is(err, apperr.ErrDatasetNotReady):
 		return http.StatusConflict, "dataset_not_ready", "Датасет ещё не готов к анализу"
-	case errors.Is(err, domain.ErrNoDatasets):
+	case errors.Is(err, apperr.ErrNoDatasets):
 		return http.StatusConflict, "no_datasets", "В каталоге нет загруженных данных"
-	case errors.Is(err, domain.ErrQueryTimeout):
+	case errors.Is(err, apperr.ErrQueryTimeout):
 		return http.StatusGatewayTimeout, "query_timeout", "Запрос слишком тяжёлый и был остановлен по времени"
-	case errors.Is(err, domain.ErrLLMUnavailable):
+	case errors.Is(err, apperr.ErrLLMUnavailable):
 		return http.StatusServiceUnavailable, "llm_unavailable", "Языковая модель недоступна"
 	case errors.Is(err, context.DeadlineExceeded):
 		return http.StatusGatewayTimeout, "timeout", "Превышено время обработки запроса"
@@ -89,7 +89,7 @@ func pathUUID(r *http.Request, param string) (uuid.UUID, error) {
 	raw := chi.URLParam(r, param)
 	id, err := uuid.Parse(raw)
 	if err != nil {
-		return uuid.Nil, domain.NewValidationError(param, "ожидается идентификатор в формате UUID")
+		return uuid.Nil, apperr.NewValidationError(param, "ожидается идентификатор в формате UUID")
 	}
 	return id, nil
 }
@@ -122,7 +122,7 @@ func decodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		return domain.NewValidationError("body", "некорректный JSON: "+err.Error())
+		return apperr.NewValidationError("body", "некорректный JSON: "+err.Error())
 	}
 	return nil
 }

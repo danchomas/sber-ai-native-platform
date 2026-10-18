@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/apperr"
 )
 
 func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
@@ -39,16 +39,16 @@ func mapError(err error) error {
 		return nil
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
 		switch pgErr.Code {
 		case "23505":
-			return fmt.Errorf("%w: %s", domain.ErrAlreadyExists, pgErr.Detail)
+			return fmt.Errorf("%w: %s", apperr.ErrAlreadyExists, pgErr.Detail)
 		case "57014":
-			return domain.ErrQueryTimeout
+			return apperr.ErrQueryTimeout
 		}
 	}
 	return err

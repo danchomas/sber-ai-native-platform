@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -78,7 +79,7 @@ func (r *SessionRepository) RenameSession(ctx context.Context, id uuid.UUID, tit
 		return mapError(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }
@@ -94,7 +95,7 @@ func (r *SessionRepository) DeleteSession(ctx context.Context, id uuid.UUID) err
 		return mapError(err)
 	}
 	if tag.RowsAffected() == 0 {
-		return domain.ErrNotFound
+		return apperr.ErrNotFound
 	}
 	return nil
 }

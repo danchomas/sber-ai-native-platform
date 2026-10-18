@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
@@ -50,10 +51,10 @@ func (s *Service) CreateFromWidgets(
 	widgets []domain.Widget,
 ) (*domain.Dashboard, error) {
 	if strings.TrimSpace(title) == "" {
-		return nil, domain.NewValidationError("title", "у дашборда должен быть заголовок")
+		return nil, apperr.NewValidationError("title", "у дашборда должен быть заголовок")
 	}
 	if len(widgets) == 0 {
-		return nil, domain.NewValidationError("widgets", "дашборд не может быть пустым")
+		return nil, apperr.NewValidationError("widgets", "дашборд не может быть пустым")
 	}
 
 	d := &domain.Dashboard{

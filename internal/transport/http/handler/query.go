@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
@@ -38,7 +39,7 @@ func (h *QueryHandler) Run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.SQL) == "" {
-		writeError(w, r, domain.NewValidationError("sql", "запрос не может быть пустым"))
+		writeError(w, r, apperr.NewValidationError("sql", "запрос не может быть пустым"))
 		return
 	}
 

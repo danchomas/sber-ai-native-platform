@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -63,10 +64,10 @@ func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string)
 
 	question = strings.TrimSpace(question)
 	if question == "" {
-		return nil, domain.NewValidationError("question", "вопрос не может быть пустым")
+		return nil, apperr.NewValidationError("question", "вопрос не может быть пустым")
 	}
 	if len([]rune(question)) > 2000 {
-		return nil, domain.NewValidationError("question", "вопрос слишком длинный")
+		return nil, apperr.NewValidationError("question", "вопрос слишком длинный")
 	}
 	if _, err := s.sessions.GetSession(ctx, sessionID); err != nil {
 		return nil, err
@@ -248,7 +249,7 @@ func (s *Service) queryAnswer(
 
 	execution, err := s.runQuery(ctx, schemaContext, question, p.SQL, scopes)
 	if err != nil {
-		if errors.Is(err, domain.ErrQueryTimeout) {
+		if errors.Is(err, apperr.ErrQueryTimeout) {
 			return &domain.Answer{
 				Intent: domain.IntentClarify,
 				Text: "Запрос оказался слишком тяжёлым и был остановлен по времени. " +
@@ -396,7 +397,7 @@ func (s *Service) runQuery(
 
 		result, err := s.exec.Query(ctx, scope.Target, checked.SQL, s.cfg.MaxRows)
 		if err != nil {
-			if errors.Is(err, domain.ErrQueryTimeout) || ctx.Err() != nil {
+			if errors.Is(err, apperr.ErrQueryTimeout) || ctx.Err() != nil {
 				return nil, err
 			}
 			lastErr = err
@@ -489,7 +490,7 @@ func humanReason(err error) string {
 	if i := strings.Index(msg, "ERROR:"); i >= 0 {
 		msg = strings.TrimSpace(msg[i+len("ERROR:"):])
 	}
-	msg = strings.TrimPrefix(msg, domain.ErrUnsafeQuery.Error()+": ")
+	msg = strings.TrimPrefix(msg, apperr.ErrUnsafeQuery.Error()+": ")
 	if len(msg) > 300 {
 		msg = msg[:300] + "…"
 	}

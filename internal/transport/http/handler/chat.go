@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -111,7 +112,7 @@ func (h *ChatHandler) Ask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		writeError(w, r, domain.NewValidationError("question", "вопрос не может быть пустым"))
+		writeError(w, r, apperr.NewValidationError("question", "вопрос не может быть пустым"))
 		return
 	}
 

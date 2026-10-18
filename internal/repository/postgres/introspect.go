@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
@@ -121,7 +122,7 @@ func (i *Introspector) Columns(ctx context.Context, s *domain.Source, schema, ta
 		return nil, queryError(err)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("таблица %s.%s: %w", schema, table, domain.ErrNotFound)
+		return nil, fmt.Errorf("таблица %s.%s: %w", schema, table, apperr.ErrNotFound)
 	}
 	return out, nil
 }
