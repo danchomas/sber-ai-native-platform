@@ -16,8 +16,8 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/repository/postgres"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
-	"github.com/heinousness/aibi/internal/repository/postgres"
 	"github.com/heinousness/aibi/internal/service/catalog"
 	"github.com/heinousness/aibi/internal/service/dashboard"
 	"github.com/heinousness/aibi/internal/service/ingest"

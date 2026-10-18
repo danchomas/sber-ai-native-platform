@@ -13,7 +13,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
 	"github.com/heinousness/aibi/internal/core/logger"
-	"github.com/heinousness/aibi/internal/repository/postgres"
+	"github.com/heinousness/aibi/internal/core/repository/postgres"
 	"github.com/heinousness/aibi/internal/service/agent"
 	"github.com/heinousness/aibi/internal/service/catalog"
 	"github.com/heinousness/aibi/internal/service/chat"

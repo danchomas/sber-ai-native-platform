@@ -8,7 +8,7 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/logger"
-	"github.com/heinousness/aibi/internal/repository/postgres"
+	"github.com/heinousness/aibi/internal/core/repository/postgres"
 )
 
 func main() {
