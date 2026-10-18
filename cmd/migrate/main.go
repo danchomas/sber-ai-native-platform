@@ -9,6 +9,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/logger"
 	"github.com/heinousness/aibi/internal/core/repository/postgres"
+	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
 )
 
 func main() {
@@ -23,7 +24,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	pool, err := postgres.NewPool(ctx, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	pool, err := pgpool.NewPool(ctx, pgpool.PoolOptionsFromConfig(cfg.Postgres))
 	if err != nil {
 		log.Error("подключение к базе данных", "error", err)
 		os.Exit(1)

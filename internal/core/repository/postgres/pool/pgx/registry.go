@@ -1,4 +1,4 @@
-package postgres
+package pgx
 
 import (
 	"context"
@@ -13,14 +13,18 @@ import (
 
 type Registry struct {
 	local   *pgxpool.Pool
-	sources domain.SourceRepository
+	sources Sources
 	tmpl    PoolOptions
 
 	mu    sync.RWMutex
 	pools map[uuid.UUID]*pgxpool.Pool
 }
 
-func NewRegistry(local *pgxpool.Pool, sources domain.SourceRepository, tmpl PoolOptions) *Registry {
+type Sources interface {
+	Get(ctx context.Context, id uuid.UUID) (*domain.Source, error)
+}
+
+func NewRegistry(local *pgxpool.Pool, sources Sources, tmpl PoolOptions) *Registry {
 	return &Registry{
 		local:   local,
 		sources: sources,

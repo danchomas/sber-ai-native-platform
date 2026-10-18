@@ -13,17 +13,18 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
+	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
 )
 
 const maxDistinctScan = 100_000
 
 type RawDataRepository struct {
-	registry     *Registry
+	registry     *pgpool.Registry
 	schema       string
 	queryTimeout time.Duration
 }
 
-func NewRawDataRepository(registry *Registry, schema string, queryTimeout time.Duration) *RawDataRepository {
+func NewRawDataRepository(registry *pgpool.Registry, schema string, queryTimeout time.Duration) *RawDataRepository {
 	return &RawDataRepository{registry: registry, schema: schema, queryTimeout: queryTimeout}
 }
 

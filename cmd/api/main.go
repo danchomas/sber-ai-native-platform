@@ -14,6 +14,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/llm"
 	"github.com/heinousness/aibi/internal/core/logger"
 	"github.com/heinousness/aibi/internal/core/repository/postgres"
+	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
 	"github.com/heinousness/aibi/internal/service/agent"
 	"github.com/heinousness/aibi/internal/service/catalog"
 	"github.com/heinousness/aibi/internal/service/chat"
@@ -45,7 +46,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := postgres.NewPool(ctx, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	pool, err := pgpool.NewPool(ctx, pgpool.PoolOptionsFromConfig(cfg.Postgres))
 	if err != nil {
 		return err
 	}
@@ -67,7 +68,7 @@ func run() error {
 	sessionRepo := postgres.NewSessionRepository(pool)
 	dashboardRepo := postgres.NewDashboardRepository(pool)
 
-	registry := postgres.NewRegistry(pool, sourceRepo, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	registry := pgpool.NewRegistry(pool, sourceRepo, pgpool.PoolOptionsFromConfig(cfg.Postgres))
 	defer registry.Close()
 
 	rawRepo := postgres.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
@@ -93,7 +94,7 @@ func run() error {
 		Chat:       chatSvc,
 		Dashboards: dashboardSvc,
 		Executor:   rawRepo,
-		DB:         postgres.NewHealthProbe(pool),
+		DB:         pgpool.NewHealthProbe(pool),
 		Model:      model,
 	})
 

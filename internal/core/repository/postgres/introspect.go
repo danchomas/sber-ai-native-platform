@@ -9,13 +9,14 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
+	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
 )
 
 type Introspector struct {
-	registry *Registry
+	registry *pgpool.Registry
 }
 
-func NewIntrospector(registry *Registry) *Introspector {
+func NewIntrospector(registry *pgpool.Registry) *Introspector {
 	return &Introspector{registry: registry}
 }
 
