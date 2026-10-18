@@ -8,9 +8,9 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/transport/http/middleware"
 	"github.com/heinousness/aibi/internal/core/web"
 	"github.com/heinousness/aibi/internal/transport/http/handler"
-	"github.com/heinousness/aibi/internal/transport/http/middleware"
 )
 
 type Deps struct {

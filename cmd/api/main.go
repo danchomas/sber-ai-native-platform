@@ -15,6 +15,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/logger"
 	"github.com/heinousness/aibi/internal/core/repository/postgres"
 	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
+	corehttp "github.com/heinousness/aibi/internal/core/transport/http"
 	"github.com/heinousness/aibi/internal/service/agent"
 	"github.com/heinousness/aibi/internal/service/catalog"
 	"github.com/heinousness/aibi/internal/service/chat"
@@ -98,7 +99,7 @@ func run() error {
 		Model:      model,
 	})
 
-	server := transport.NewServer(cfg.HTTP, router, log)
+	server := corehttp.NewServer(cfg.HTTP, router, log)
 	if err := server.Run(ctx); err != nil {
 		return err
 	}

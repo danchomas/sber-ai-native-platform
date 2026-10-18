@@ -1,6 +1,11 @@
 package handler
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/heinousness/aibi/internal/core/transport/http/request"
+	"github.com/heinousness/aibi/internal/core/transport/http/response"
+)
 
 type DashboardHandler struct {
 	dashboards Dashboards
@@ -11,37 +16,37 @@ func NewDashboard(dashboards Dashboards) *DashboardHandler {
 }
 
 func (h *DashboardHandler) List(w http.ResponseWriter, r *http.Request) {
-	dashboards, err := h.dashboards.List(r.Context(), queryInt(r, "limit", 50))
+	dashboards, err := h.dashboards.List(r.Context(), request.Int(r, "limit", 50))
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"dashboards": dashboards})
+	response.JSON(w, r, http.StatusOK, map[string]any{"dashboards": dashboards})
 }
 
 func (h *DashboardHandler) Get(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	dashboard, err := h.dashboards.Get(r.Context(), id, queryBool(r, "refresh", true))
+	dashboard, err := h.dashboards.Get(r.Context(), id, request.Bool(r, "refresh", true))
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, dashboard)
+	response.JSON(w, r, http.StatusOK, dashboard)
 }
 
 func (h *DashboardHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 	if err := h.dashboards.Delete(r.Context(), id); err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusNoContent, nil)
+	response.JSON(w, r, http.StatusNoContent, nil)
 }

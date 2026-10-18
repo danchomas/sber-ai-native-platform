@@ -1,15 +1,10 @@
-package handler
+package response
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
-	"strconv"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/logger"
@@ -25,7 +20,7 @@ type errorPayload struct {
 	Field   string `json:"field,omitempty"`
 }
 
-func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
+func JSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	if payload == nil {
@@ -36,7 +31,11 @@ func writeJSON(w http.ResponseWriter, r *http.Request, status int, payload any) 
 	}
 }
 
-func writeError(w http.ResponseWriter, r *http.Request, err error) {
+func NoContent(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func Error(w http.ResponseWriter, r *http.Request, err error) {
 	status, code, message := classify(err)
 
 	log := logger.From(r.Context())
@@ -83,46 +82,4 @@ func classify(err error) (status int, code, message string) {
 	default:
 		return http.StatusInternalServerError, "internal", "Внутренняя ошибка сервера"
 	}
-}
-
-func pathUUID(r *http.Request, param string) (uuid.UUID, error) {
-	raw := chi.URLParam(r, param)
-	id, err := uuid.Parse(raw)
-	if err != nil {
-		return uuid.Nil, apperr.NewValidationError(param, "ожидается идентификатор в формате UUID")
-	}
-	return id, nil
-}
-
-func queryInt(r *http.Request, name string, def int) int {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return def
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n < 0 {
-		return def
-	}
-	return n
-}
-
-func queryBool(r *http.Request, name string, def bool) bool {
-	raw := r.URL.Query().Get(name)
-	if raw == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(raw)
-	if err != nil {
-		return def
-	}
-	return b
-}
-
-func decodeJSON(r *http.Request, dst any) error {
-	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(dst); err != nil {
-		return apperr.NewValidationError("body", "некорректный JSON: "+err.Error())
-	}
-	return nil
 }

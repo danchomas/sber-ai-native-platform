@@ -8,6 +8,8 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/transport/http/request"
+	"github.com/heinousness/aibi/internal/core/transport/http/response"
 )
 
 type ChatHandler struct {
@@ -35,91 +37,91 @@ type askResponse struct {
 func (h *ChatHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 	var req createSessionRequest
 	if r.ContentLength > 0 {
-		if err := decodeJSON(r, &req); err != nil {
-			writeError(w, r, err)
+		if err := request.Decode(r, &req); err != nil {
+			response.Error(w, r, err)
 			return
 		}
 	}
 
 	session, err := h.chat.Create(r.Context(), req.Title, req.DatasetIDs)
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusCreated, session)
+	response.JSON(w, r, http.StatusCreated, session)
 }
 
 func (h *ChatHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := h.chat.List(r.Context(), queryInt(r, "limit", 50))
+	sessions, err := h.chat.List(r.Context(), request.Int(r, "limit", 50))
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
+	response.JSON(w, r, http.StatusOK, map[string]any{"sessions": sessions})
 }
 
 func (h *ChatHandler) GetSession(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 	session, err := h.chat.Get(r.Context(), id)
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, session)
+	response.JSON(w, r, http.StatusOK, session)
 }
 
 func (h *ChatHandler) Messages(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	messages, err := h.chat.Messages(r.Context(), id, queryInt(r, "limit", 200))
+	messages, err := h.chat.Messages(r.Context(), id, request.Int(r, "limit", 200))
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]any{"messages": messages})
+	response.JSON(w, r, http.StatusOK, map[string]any{"messages": messages})
 }
 
 func (h *ChatHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 	if err := h.chat.Delete(r.Context(), id); err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusNoContent, nil)
+	response.JSON(w, r, http.StatusNoContent, nil)
 }
 
 func (h *ChatHandler) Ask(w http.ResponseWriter, r *http.Request) {
-	id, err := pathUUID(r, "id")
+	id, err := request.UUID(r, "id")
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 
 	var req askRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, r, err)
+	if err := request.Decode(r, &req); err != nil {
+		response.Error(w, r, err)
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		writeError(w, r, apperr.NewValidationError("question", "вопрос не может быть пустым"))
+		response.Error(w, r, apperr.NewValidationError("question", "вопрос не может быть пустым"))
 		return
 	}
 
 	answer, err := h.chat.Ask(r.Context(), id, req.Question)
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, askResponse{SessionID: id, Answer: answer})
+	response.JSON(w, r, http.StatusOK, askResponse{SessionID: id, Answer: answer})
 }

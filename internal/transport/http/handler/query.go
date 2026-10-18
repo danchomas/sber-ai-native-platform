@@ -8,6 +8,8 @@ import (
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
+	"github.com/heinousness/aibi/internal/core/transport/http/request"
+	"github.com/heinousness/aibi/internal/core/transport/http/response"
 )
 
 type QueryHandler struct {
@@ -34,18 +36,18 @@ type queryResponse struct {
 
 func (h *QueryHandler) Run(w http.ResponseWriter, r *http.Request) {
 	var req queryRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, r, err)
+	if err := request.Decode(r, &req); err != nil {
+		response.Error(w, r, err)
 		return
 	}
 	if strings.TrimSpace(req.SQL) == "" {
-		writeError(w, r, apperr.NewValidationError("sql", "запрос не может быть пустым"))
+		response.Error(w, r, apperr.NewValidationError("sql", "запрос не может быть пустым"))
 		return
 	}
 
 	scopes, err := h.catalog.Scopes(r.Context())
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 
@@ -56,16 +58,16 @@ func (h *QueryHandler) Run(w http.ResponseWriter, r *http.Request) {
 
 	scope, checked, err := sqlguard.ResolveScope(req.SQL, scopes, h.catalog.Schema(), maxRows)
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
 
 	result, err := h.exec.Query(r.Context(), scope.Target, checked.SQL, maxRows)
 	if err != nil {
-		writeError(w, r, err)
+		response.Error(w, r, err)
 		return
 	}
-	writeJSON(w, r, http.StatusOK, queryResponse{
+	response.JSON(w, r, http.StatusOK, queryResponse{
 		Result:   result,
 		Source:   scope.SourceName,
 		Tables:   checked.Tables,

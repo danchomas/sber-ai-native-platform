@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/transport/http/response"
 )
 
 type DBHealth interface {
@@ -67,7 +68,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 		resp.Components["llm"] = componentStatus{Status: "ok", Detail: h.model.Model()}
 	}
 
-	writeJSON(w, r, status, resp)
+	response.JSON(w, r, status, resp)
 }
 
 func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
@@ -75,8 +76,8 @@ func (h *HealthHandler) Ready(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	if err := h.db.Ping(ctx); err != nil {
-		writeJSON(w, r, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		response.JSON(w, r, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
-	writeJSON(w, r, http.StatusOK, map[string]string{"status": "ready"})
+	response.JSON(w, r, http.StatusOK, map[string]string{"status": "ready"})
 }
