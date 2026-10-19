@@ -27,7 +27,7 @@ type Executor interface {
 }
 
 type Service struct {
-	repo    domain.DashboardRepository
+	repo    DashboardRepository
 	catalog Catalog
 	exec    Executor
 	cfg     config.Query
@@ -35,7 +35,7 @@ type Service struct {
 }
 
 func New(
-	repo domain.DashboardRepository,
+	repo DashboardRepository,
 	catalog Catalog,
 	exec Executor,
 	cfg config.Query,

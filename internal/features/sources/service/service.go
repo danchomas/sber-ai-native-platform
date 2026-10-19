@@ -19,20 +19,20 @@ type Profiler interface {
 }
 
 type Service struct {
-	sources    domain.SourceRepository
-	datasets   domain.DatasetRepository
+	sources    SourceRepository
+	datasets   Datasets
 	raw        domain.RawDataRepository
-	introspect domain.SourceIntrospector
+	introspect SourceIntrospector
 	profiler   Profiler
 	forgetPool func(uuid.UUID)
 	log        *slog.Logger
 }
 
 func New(
-	sources domain.SourceRepository,
-	datasets domain.DatasetRepository,
+	sources SourceRepository,
+	datasets Datasets,
 	raw domain.RawDataRepository,
-	introspect domain.SourceIntrospector,
+	introspect SourceIntrospector,
 	profiler Profiler,
 	forgetPool func(uuid.UUID),
 	log *slog.Logger,

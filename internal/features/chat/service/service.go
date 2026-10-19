@@ -37,7 +37,7 @@ type Dashboards interface {
 type Service struct {
 	catalog    Catalog
 	exec       Executor
-	sessions   domain.SessionRepository
+	sessions   SessionRepository
 	dashboards Dashboards
 	model      domain.LLM
 	cfg        config.Query
@@ -47,7 +47,7 @@ type Service struct {
 func New(
 	catalog Catalog,
 	exec Executor,
-	sessions domain.SessionRepository,
+	sessions SessionRepository,
 	dashboards Dashboards,
 	model domain.LLM,
 	cfg config.Query,

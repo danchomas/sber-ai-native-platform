@@ -21,8 +21,6 @@ func NewIntrospector(registry *pgpool.Registry) *Introspector {
 	return &Introspector{registry: registry}
 }
 
-var _ domain.SourceIntrospector = (*Introspector)(nil)
-
 func (i *Introspector) Ping(ctx context.Context, s *domain.Source) error {
 	pool, err := i.registry.Open(ctx, s)
 	if err != nil {

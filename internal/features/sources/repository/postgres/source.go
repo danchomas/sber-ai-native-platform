@@ -21,8 +21,6 @@ func NewSourceRepository(pool *pgxpool.Pool) *SourceRepository {
 	return &SourceRepository{pool: pool}
 }
 
-var _ domain.SourceRepository = (*SourceRepository)(nil)
-
 const sourceColumns = `id, name, kind, dsn, status, fail_reason, created_at, updated_at`
 
 func (r *SourceRepository) Create(ctx context.Context, s *domain.Source) error {

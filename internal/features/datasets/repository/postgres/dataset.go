@@ -22,8 +22,6 @@ func NewDatasetRepository(pool *pgxpool.Pool) *DatasetRepository {
 	return &DatasetRepository{pool: pool}
 }
 
-var _ domain.DatasetRepository = (*DatasetRepository)(nil)
-
 const datasetColumns = `d.id, d.name, d.origin, d.source_id, COALESCE(s.name, ''),
 	d.schema_name, d.table_name, d.source_file, d.delimiter, d.row_count,
 	d.size_bytes, d.status, d.fail_reason, d.description, d.created_at, d.updated_at`

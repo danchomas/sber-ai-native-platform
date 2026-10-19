@@ -22,8 +22,6 @@ func NewSessionRepository(pool *pgxpool.Pool) *SessionRepository {
 	return &SessionRepository{pool: pool}
 }
 
-var _ domain.SessionRepository = (*SessionRepository)(nil)
-
 func (r *SessionRepository) CreateSession(ctx context.Context, s *domain.Session) error {
 	const q = `
 		INSERT INTO chat_sessions (id, title, dataset_ids)

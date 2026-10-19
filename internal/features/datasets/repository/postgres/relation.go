@@ -20,8 +20,6 @@ func NewRelationRepository(pool *pgxpool.Pool) *RelationRepository {
 	return &RelationRepository{pool: pool}
 }
 
-var _ domain.RelationRepository = (*RelationRepository)(nil)
-
 func (r *RelationRepository) Replace(ctx context.Context, rels []domain.Relation) error {
 	return corepg.WithTx(ctx, r.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `DELETE FROM dataset_relations`); err != nil {

@@ -55,3 +55,11 @@ const (
 	OriginUploaded DatasetOrigin = "uploaded"
 	OriginAttached DatasetOrigin = "attached"
 )
+
+type ExternalTable struct {
+	Schema       string `json:"schema"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	EstimateRows int64  `json:"estimate_rows"`
+	Attached     bool   `json:"attached"`
+}

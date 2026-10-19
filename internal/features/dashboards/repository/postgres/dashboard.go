@@ -22,8 +22,6 @@ func NewDashboardRepository(pool *pgxpool.Pool) *DashboardRepository {
 	return &DashboardRepository{pool: pool}
 }
 
-var _ domain.DashboardRepository = (*DashboardRepository)(nil)
-
 func (r *DashboardRepository) Create(ctx context.Context, d *domain.Dashboard) error {
 	return corepg.WithTx(ctx, r.pool, func(tx pgx.Tx) error {
 		const q = `

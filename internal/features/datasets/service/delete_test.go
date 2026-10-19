@@ -13,7 +13,7 @@ import (
 )
 
 type stubDatasets struct {
-	domain.DatasetRepository
+	DatasetRepository
 	dataset *domain.Dataset
 	deleted []uuid.UUID
 }
@@ -42,7 +42,7 @@ func (s *stubRaw) DropTable(_ context.Context, table string) error {
 }
 
 type stubRelations struct {
-	domain.RelationRepository
+	RelationRepository
 }
 
 func (stubRelations) Replace(context.Context, []domain.Relation) error { return nil }

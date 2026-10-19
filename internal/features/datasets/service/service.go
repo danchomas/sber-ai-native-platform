@@ -21,8 +21,8 @@ const minOverlap = 0.25
 const profileConcurrency = 4
 
 type Service struct {
-	datasets  domain.DatasetRepository
-	relations domain.RelationRepository
+	datasets  DatasetRepository
+	relations RelationRepository
 	raw       domain.RawDataRepository
 	schema    string
 	cfg       config.Ingest
@@ -31,8 +31,8 @@ type Service struct {
 }
 
 func New(
-	datasets domain.DatasetRepository,
-	relations domain.RelationRepository,
+	datasets DatasetRepository,
+	relations RelationRepository,
 	raw domain.RawDataRepository,
 	schema string,
 	cfg config.Ingest,
