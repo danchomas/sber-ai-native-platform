@@ -9,18 +9,30 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/heinousness/aibi/internal/config"
-	"github.com/heinousness/aibi/internal/domain"
-	"github.com/heinousness/aibi/internal/llm"
-	"github.com/heinousness/aibi/internal/logger"
-	"github.com/heinousness/aibi/internal/repository/postgres"
-	"github.com/heinousness/aibi/internal/service/agent"
-	"github.com/heinousness/aibi/internal/service/catalog"
-	"github.com/heinousness/aibi/internal/service/chat"
-	"github.com/heinousness/aibi/internal/service/dashboard"
-	"github.com/heinousness/aibi/internal/service/ingest"
-	"github.com/heinousness/aibi/internal/service/source"
-	transport "github.com/heinousness/aibi/internal/transport/http"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/llm"
+	"github.com/heinousness/aibi/internal/core/logger"
+	corepg "github.com/heinousness/aibi/internal/core/repository/postgres"
+	pgpool "github.com/heinousness/aibi/internal/core/repository/postgres/pool/pgx"
+	corehttp "github.com/heinousness/aibi/internal/core/transport/http"
+	"github.com/heinousness/aibi/internal/core/transport/http/health"
+	"github.com/heinousness/aibi/internal/core/transport/http/middleware"
+	"github.com/heinousness/aibi/internal/core/web"
+
+	chatpg "github.com/heinousness/aibi/internal/features/chat/repository/postgres"
+	chatsvc "github.com/heinousness/aibi/internal/features/chat/service"
+	chathttp "github.com/heinousness/aibi/internal/features/chat/transport/http"
+	dashpg "github.com/heinousness/aibi/internal/features/dashboards/repository/postgres"
+	dashsvc "github.com/heinousness/aibi/internal/features/dashboards/service"
+	dashhttp "github.com/heinousness/aibi/internal/features/dashboards/transport/http"
+	datapg "github.com/heinousness/aibi/internal/features/datasets/repository/postgres"
+	datasvc "github.com/heinousness/aibi/internal/features/datasets/service"
+	datahttp "github.com/heinousness/aibi/internal/features/datasets/transport/http"
+	queryhttp "github.com/heinousness/aibi/internal/features/query/transport/http"
+	srcpg "github.com/heinousness/aibi/internal/features/sources/repository/postgres"
+	srcsvc "github.com/heinousness/aibi/internal/features/sources/service"
+	srchttp "github.com/heinousness/aibi/internal/features/sources/transport/http"
 )
 
 var version = "dev"
@@ -45,7 +57,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := postgres.NewPool(ctx, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	pool, err := pgpool.NewPool(ctx, pgpool.PoolOptionsFromConfig(cfg.Postgres))
 	if err != nil {
 		return err
 	}
@@ -53,7 +65,7 @@ func run() error {
 	log.Info("подключение к PostgreSQL установлено",
 		"max_conns", cfg.Postgres.MaxConns, "schema", cfg.Postgres.RawSchema)
 
-	applied, err := postgres.Migrate(ctx, pool, cfg.Postgres.RawSchema)
+	applied, err := corepg.Migrate(ctx, pool, cfg.Postgres.RawSchema)
 	if err != nil {
 		return err
 	}
@@ -61,43 +73,41 @@ func run() error {
 		log.Info("миграции применены", "count", len(applied), "versions", applied)
 	}
 
-	sourceRepo := postgres.NewSourceRepository(pool)
-	datasetRepo := postgres.NewDatasetRepository(pool)
-	relationRepo := postgres.NewRelationRepository(pool)
-	sessionRepo := postgres.NewSessionRepository(pool)
-	dashboardRepo := postgres.NewDashboardRepository(pool)
+	sourceRepo := srcpg.NewSourceRepository(pool)
+	datasetRepo := datapg.NewDatasetRepository(pool)
+	relationRepo := datapg.NewRelationRepository(pool)
+	sessionRepo := chatpg.NewSessionRepository(pool)
+	dashboardRepo := dashpg.NewDashboardRepository(pool)
 
-	registry := postgres.NewRegistry(pool, sourceRepo, postgres.PoolOptionsFromConfig(cfg.Postgres))
+	registry := pgpool.NewRegistry(pool, sourceRepo, pgpool.PoolOptionsFromConfig(cfg.Postgres))
 	defer registry.Close()
 
-	rawRepo := postgres.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
+	rawRepo := corepg.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
 
 	model := newModel(ctx, cfg, log)
 
-	catalogSvc := catalog.New(datasetRepo, relationRepo, rawRepo,
+	datasets := datasvc.New(datasetRepo, relationRepo, rawRepo,
 		cfg.Postgres.RawSchema, cfg.Ingest, cfg.Query, log)
-	ingestSvc := ingest.New(datasetRepo, rawRepo, catalogSvc, cfg.Postgres.RawSchema, cfg.Ingest, log)
-	sourceSvc := source.New(sourceRepo, datasetRepo, rawRepo,
-		postgres.NewIntrospector(registry), catalogSvc, registry.Forget, log)
-	dashboardSvc := dashboard.New(dashboardRepo, catalogSvc, rawRepo, cfg.Query, log)
-	agentSvc := agent.New(catalogSvc, rawRepo, sessionRepo, dashboardSvc, model, cfg.Query, log)
-	chatSvc := chat.New(sessionRepo, agentSvc, log)
+	sources := srcsvc.New(sourceRepo, datasetRepo, rawRepo,
+		srcpg.NewIntrospector(registry), datasets, registry.Forget, log)
+	dashboards := dashsvc.New(dashboardRepo, datasets, rawRepo, cfg.Query, log)
+	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, model, cfg.Query, log)
 
-	router := transport.NewRouter(transport.Deps{
-		Config:     cfg,
-		Logger:     log,
-		Version:    version,
-		Ingest:     ingestSvc,
-		Catalog:    catalogSvc,
-		Sources:    sourceSvc,
-		Chat:       chatSvc,
-		Dashboards: dashboardSvc,
-		Executor:   rawRepo,
-		DB:         postgres.NewHealthProbe(pool),
-		Model:      model,
+	router := corehttp.NewRouter(corehttp.RouterOptions{
+		Config: cfg,
+		Logger: log,
+		Static: web.Handler(),
+		Features: []corehttp.Registrar{
+			health.New(pgpool.NewHealthProbe(pool), model, version),
+			datahttp.New(datasets, middleware.MaxBody(cfg.Ingest.MaxUploadBytes+1<<20)),
+			srchttp.New(sources),
+			chathttp.New(chat),
+			dashhttp.New(dashboards),
+			queryhttp.New(datasets, rawRepo, cfg.Query),
+		},
 	})
 
-	server := transport.NewServer(cfg.HTTP, router, log)
+	server := corehttp.NewServer(cfg.HTTP, router, log)
 	if err := server.Run(ctx); err != nil {
 		return err
 	}
