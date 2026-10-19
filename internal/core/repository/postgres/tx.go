@@ -13,7 +13,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/apperr"
 )
 
-func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
+func WithTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("начало транзакции: %w", err)
@@ -34,7 +34,7 @@ func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) erro
 	return tx.Commit(ctx)
 }
 
-func mapError(err error) error {
+func MapError(err error) error {
 	if err == nil {
 		return nil
 	}
@@ -54,10 +54,10 @@ func mapError(err error) error {
 	return err
 }
 
-func quoteIdent(s string) string {
+func QuoteIdent(s string) string {
 	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
 }
 
-func quoteLiteral(s string) string {
+func QuoteLiteral(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }

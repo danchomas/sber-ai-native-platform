@@ -30,7 +30,7 @@ test: ## Юнит-тесты
 
 .PHONY: test-integration
 test-integration: ## Интеграционные тесты (нужен PostgreSQL)
-	TEST_DATABASE_URL="$(TEST_PG_DSN)" go test -race -tags=integration ./internal/repository/... -v
+	TEST_DATABASE_URL="$(TEST_PG_DSN)" go test -race -tags=integration ./internal/integration/... -v
 
 .PHONY: cover
 cover: ## Покрытие тестами

@@ -59,9 +59,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, rawSchema string) ([]strin
 		if _, ok := applied[m.Version]; ok {
 			continue
 		}
-		stmt := strings.ReplaceAll(m.SQL, "{{RAW_SCHEMA}}", quoteIdent(rawSchema))
-		stmt = strings.ReplaceAll(stmt, "{{RAW_SCHEMA_LITERAL}}", quoteLiteral(rawSchema))
-		err := withTx(ctx, pool, func(tx pgx.Tx) error {
+		stmt := strings.ReplaceAll(m.SQL, "{{RAW_SCHEMA}}", QuoteIdent(rawSchema))
+		stmt = strings.ReplaceAll(stmt, "{{RAW_SCHEMA_LITERAL}}", QuoteLiteral(rawSchema))
+		err := WithTx(ctx, pool, func(tx pgx.Tx) error {
 			if _, err := tx.Exec(ctx, stmt); err != nil {
 				return err
 			}
