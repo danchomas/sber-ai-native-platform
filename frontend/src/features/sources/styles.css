@@ -1,0 +1,6 @@
+/* Источники. */
+
+.tag.warn {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+}

@@ -3,6 +3,7 @@ BINARY      := bin/aibi
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 TEST_PG_DSN ?= postgres://aibi:aibi@localhost:5432/aibi_test?sslmode=disable
+LLM_MODEL   ?= qwen2.5-coder:14b
 
 .DEFAULT_GOAL := help
 
@@ -17,15 +18,27 @@ build: ## Собрать бинарники
 	go build -trimpath -ldflags "-s -w" -o bin/aibi-migrate ./cmd/migrate
 
 .PHONY: run
-run: ## Запустить API локально
+run: ## Запустить API локально (интерфейс — отдельно, make front)
 	go run ./cmd/api
+
+.PHONY: front
+front: ## Запустить интерфейс в режиме разработки на :5173
+	cd frontend && npm install && npm run dev
+
+.PHONY: front-build
+front-build: ## Собрать интерфейс
+	cd frontend && npm ci && npm run build
+
+.PHONY: front-test
+front-test: ## Тесты интерфейса
+	cd frontend && npm ci && npm test
 
 .PHONY: migrate
 migrate: ## Применить миграции
 	go run ./cmd/migrate
 
 .PHONY: test
-test: ## Юнит-тесты
+test: ## Юнит-тесты (Go)
 	go test -race ./...
 
 .PHONY: test-integration
@@ -47,12 +60,16 @@ tidy: ## Привести go.mod в порядок
 	go mod tidy
 
 .PHONY: up
-up: ## Поднять стенд (PostgreSQL + API)
+up: ## Поднять стенд (PostgreSQL + API + интерфейс на :3000)
 	docker compose up -d --build
 
 .PHONY: up-llm
 up-llm: ## Поднять стенд вместе с локальной моделью
 	docker compose --profile llm up -d --build
+	@echo "Жду готовности Ollama…"
+	@until docker compose exec -T ollama ollama list >/dev/null 2>&1; do sleep 2; done
+	@echo "Тяну модель $(LLM_MODEL) — это долго при первом запуске."
+	docker compose exec -T ollama ollama pull $(LLM_MODEL)
 
 .PHONY: down
 down: ## Остановить стенд
@@ -61,6 +78,10 @@ down: ## Остановить стенд
 .PHONY: logs
 logs: ## Логи API
 	docker compose logs -f api
+
+.PHONY: logs-front
+logs-front: ## Логи интерфейса
+	docker compose logs -f frontend
 
 .PHONY: psql
 psql: ## Консоль PostgreSQL стенда

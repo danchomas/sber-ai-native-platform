@@ -1,0 +1,41 @@
+/* Диалог с агентом. */
+
+.thread { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.msg { display: flex; gap: 12px; }
+.msg .who {
+  flex: 0 0 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+  font-size: 12px; font-weight: 700; background: var(--surface-3); color: var(--text-secondary);
+}
+.msg.user .who { background: var(--accent); color: #fff; }
+.msg .body { min-width: 0; flex: 1; }
+.msg.user .text { background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 14px; display: inline-block; }
+.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg .meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
+.answer-extras { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+details.sql { border-top: 1px solid var(--border); padding-top: 10px; }
+details.sql summary { cursor: pointer; font-size: 12px; color: var(--text-muted); }
+details.sql pre {
+  margin: 10px 0 0; padding: 12px; overflow-x: auto;
+  background: var(--surface-2); border-radius: var(--radius-sm);
+  font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--text-secondary);
+}
+
+.composer { border-top: 1px solid var(--border); background: var(--surface-1); padding: 14px 28px 18px; }
+.composer-inner { max-width: 1040px; margin: 0 auto; }
+.composer-box {
+  display: flex; gap: 10px; align-items: flex-end;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px;
+}
+.composer-box:focus-within { border-color: var(--accent); }
+.composer textarea {
+  flex: 1; border: 0; background: transparent; color: var(--text-primary);
+  resize: none; font: inherit; max-height: 160px; outline: none;
+}
+.send {
+  border: 0; border-radius: var(--radius-sm); padding: 8px 16px;
+  background: var(--accent); color: #fff; font-weight: 600;
+}
+.send:disabled { opacity: 0.5; cursor: default; }
+.hint { margin: 8px 2px 0; font-size: 12px; color: var(--text-muted); }

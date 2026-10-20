@@ -18,7 +18,6 @@ import (
 	corehttp "github.com/heinousness/aibi/internal/core/transport/http"
 	"github.com/heinousness/aibi/internal/core/transport/http/health"
 	"github.com/heinousness/aibi/internal/core/transport/http/middleware"
-	"github.com/heinousness/aibi/internal/core/web"
 
 	chatpg "github.com/heinousness/aibi/internal/features/chat/repository/postgres"
 	chatsvc "github.com/heinousness/aibi/internal/features/chat/service"
@@ -96,7 +95,6 @@ func run() error {
 	router := corehttp.NewRouter(corehttp.RouterOptions{
 		Config: cfg,
 		Logger: log,
-		Static: web.Handler(),
 		Features: []corehttp.Registrar{
 			health.New(pgpool.NewHealthProbe(pool), model, version),
 			datahttp.New(datasets, middleware.MaxBody(cfg.Ingest.MaxUploadBytes+1<<20)),

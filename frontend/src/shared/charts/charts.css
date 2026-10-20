@@ -1,0 +1,29 @@
+/* Оформление визуализаций. */
+
+figure.viz { margin: 0; }
+figure.viz figcaption { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+figure.viz figcaption h4 { font-size: 14px; }
+figure.viz figcaption .sub { font-size: 12px; color: var(--text-muted); }
+figure.viz figcaption .spacer { flex: 1; }
+.viz-body { position: relative; }
+.viz svg { display: block; width: 100%; overflow: visible; }
+.viz text { font-family: var(--font); fill: var(--text-muted); font-size: 11px; }
+.viz text.value { fill: var(--text-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; font-size: 12px; color: var(--text-secondary); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.tip {
+  position: absolute; pointer-events: none; opacity: 0; transition: opacity 0.1s;
+  background: var(--surface-3); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 7px 10px; font-size: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  z-index: 5; max-width: 260px;
+}
+.tip b { font-variant-numeric: tabular-nums; }
+.kpis { display: flex; flex-wrap: wrap; gap: 12px; }
+.kpi {
+  flex: 1 1 160px; padding: 14px 16px; border-radius: var(--radius);
+  background: var(--surface-2); border: 1px solid var(--border);
+}
+.kpi .label { font-size: 12px; color: var(--text-muted); }
+.kpi .value { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin-top: 4px; }
