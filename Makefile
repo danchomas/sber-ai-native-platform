@@ -29,12 +29,16 @@ front: ## Запустить интерфейс в режиме разработ
 front-build: ## Собрать интерфейс
 	cd frontend && npm ci && npm run build
 
+.PHONY: front-test
+front-test: ## Тесты интерфейса
+	cd frontend && npm ci && npm test
+
 .PHONY: migrate
 migrate: ## Применить миграции
 	go run ./cmd/migrate
 
 .PHONY: test
-test: ## Юнит-тесты
+test: ## Юнит-тесты (Go)
 	go test -race ./...
 
 .PHONY: test-integration
