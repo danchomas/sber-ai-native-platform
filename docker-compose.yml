@@ -1,5 +1,8 @@
 # Локальный стенд платформы. Внешние сервисы не требуются:
-# PostgreSQL и языковая модель поднимаются рядом в том же compose.
+# PostgreSQL, интерфейс и языковая модель поднимаются рядом в том же compose.
+#
+# Точка входа — frontend на :3000: он отдаёт интерфейс и проксирует /api
+# в api. Порт api наружу оставлен для curl и отладки.
 services:
   postgres:
     image: postgres:18-bookworm
@@ -51,6 +54,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      api:
+        condition: service_started
 
   # Локальная модель. Профиль llm включается явно:
   #   docker compose --profile llm up -d

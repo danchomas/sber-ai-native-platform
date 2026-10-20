@@ -17,7 +17,6 @@ type Registrar interface {
 type RouterOptions struct {
 	Config   *config.Config
 	Logger   *slog.Logger
-	Static   http.Handler
 	Features []Registrar
 }
 
@@ -35,8 +34,5 @@ func NewRouter(opts RouterOptions) http.Handler {
 		}
 	})
 
-	if opts.Static != nil {
-		r.Handle("/*", opts.Static)
-	}
 	return r
 }

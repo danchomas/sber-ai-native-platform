@@ -1,0 +1,4 @@
+/* Панели. */
+
+.dash-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+.widget { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
