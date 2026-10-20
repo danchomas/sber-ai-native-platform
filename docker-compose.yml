@@ -34,6 +34,21 @@ services:
       timeout: 3s
       retries: 20
 
+  # Миграции схемы. Отдельный шаг, а не часть старта приложения: так
+  # понятно, кто и когда меняет базу, и откат делается тем же инструментом.
+  migrate:
+    image: migrate/migrate:v4.19.0
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build:
       context: .
@@ -54,6 +69,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   frontend:
     build:

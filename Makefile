@@ -12,10 +12,9 @@ help: ## Список целей
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 .PHONY: build
-build: ## Собрать бинарники
+build: ## Собрать бинарник API
 	@mkdir -p bin
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/api
-	go build -trimpath -ldflags "-s -w" -o bin/aibi-migrate ./cmd/migrate
 
 .PHONY: run
 run: ## Запустить API локально (интерфейс — отдельно, make front)
@@ -34,8 +33,19 @@ front-test: ## Тесты интерфейса
 	cd frontend && npm ci && npm test
 
 .PHONY: migrate
-migrate: ## Применить миграции
-	go run ./cmd/migrate
+migrate: ## Применить миграции (контейнер migrate поверх ./migrations)
+	docker compose run --rm migrate
+
+.PHONY: migrate-down
+migrate-down: ## Откатить одну миграцию
+	docker compose run --rm migrate -path=/migrations \
+		-database=postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable down 1
+
+.PHONY: migrate-new
+migrate-new: ## Создать пару файлов миграции: make migrate-new NAME=add_x
+	@test -n "$(NAME)" || (echo "укажите NAME, например: make migrate-new NAME=add_x" && exit 1)
+	docker compose run --rm --entrypoint migrate migrate \
+		create -ext sql -dir /migrations -seq $(NAME)
 
 .PHONY: test
 test: ## Юнит-тесты (Go)

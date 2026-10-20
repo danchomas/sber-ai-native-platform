@@ -11,6 +11,8 @@ import (
 	"github.com/heinousness/aibi/internal/core/config"
 )
 
+const defaultPingTimeout = 10 * time.Second
+
 type PoolOptions struct {
 	DSN               string
 	MaxConns          int32
@@ -29,12 +31,24 @@ func NewPool(ctx context.Context, opts PoolOptions) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("разбор DSN: %w", err)
 	}
 
-	pgCfg.MaxConns = opts.MaxConns
-	pgCfg.MinConns = opts.MinConns
-	pgCfg.MaxConnLifetime = opts.MaxConnLifetime
-	pgCfg.MaxConnIdleTime = opts.MaxConnIdleTime
-	pgCfg.HealthCheckPeriod = opts.HealthCheckPeriod
-	pgCfg.ConnConfig.ConnectTimeout = opts.ConnectTimeout
+	if opts.MaxConns > 0 {
+		pgCfg.MaxConns = opts.MaxConns
+	}
+	if opts.MinConns > 0 {
+		pgCfg.MinConns = opts.MinConns
+	}
+	if opts.MaxConnLifetime > 0 {
+		pgCfg.MaxConnLifetime = opts.MaxConnLifetime
+	}
+	if opts.MaxConnIdleTime > 0 {
+		pgCfg.MaxConnIdleTime = opts.MaxConnIdleTime
+	}
+	if opts.HealthCheckPeriod > 0 {
+		pgCfg.HealthCheckPeriod = opts.HealthCheckPeriod
+	}
+	if opts.ConnectTimeout > 0 {
+		pgCfg.ConnConfig.ConnectTimeout = opts.ConnectTimeout
+	}
 
 	pgCfg.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
 
@@ -57,7 +71,11 @@ func NewPool(ctx context.Context, opts PoolOptions) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("создание пула: %w", err)
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, opts.ConnectTimeout)
+	pingTimeout := opts.ConnectTimeout
+	if pingTimeout <= 0 {
+		pingTimeout = defaultPingTimeout
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
 	defer cancel()
 	if err := pool.Ping(pingCtx); err != nil {
 		pool.Close()

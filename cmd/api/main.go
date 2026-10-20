@@ -64,12 +64,8 @@ func run() error {
 	log.Info("подключение к PostgreSQL установлено",
 		"max_conns", cfg.Postgres.MaxConns, "schema", cfg.Postgres.RawSchema)
 
-	applied, err := corepg.Migrate(ctx, pool, cfg.Postgres.RawSchema)
-	if err != nil {
+	if err := corepg.EnsureRawSchema(ctx, pool, cfg.Postgres.RawSchema); err != nil {
 		return err
-	}
-	if len(applied) > 0 {
-		log.Info("миграции применены", "count", len(applied), "versions", applied)
 	}
 
 	sourceRepo := srcpg.NewSourceRepository(pool)

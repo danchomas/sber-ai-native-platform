@@ -1,4 +1,4 @@
--- 0002_sources: прямое подключение к внешним базам данных.
+-- Прямое подключение к внешним базам данных.
 --
 -- Датасет перестаёт быть синонимом «загруженный CSV»: теперь у него есть
 -- происхождение. Загруженные файлы лежат в собственной схеме платформы,
@@ -35,6 +35,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS datasets_physical_idx ON datasets (
 );
 
 CREATE INDEX IF NOT EXISTS datasets_source_idx ON datasets (source_id);
-
--- Существующие датасеты — загруженные файлы в схеме платформы.
-UPDATE datasets SET schema_name = {{RAW_SCHEMA_LITERAL}} WHERE schema_name = '';

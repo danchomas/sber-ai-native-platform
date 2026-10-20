@@ -7,6 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -59,6 +61,38 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+func applyMigrations(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
+	t.Helper()
+
+	dir := filepath.Join("..", "..", "migrations")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("каталог миграций: %v", err)
+	}
+
+	var up []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".up.sql") {
+			up = append(up, e.Name())
+		}
+	}
+	sort.Strings(up)
+	if len(up) == 0 {
+		t.Fatal("в каталоге миграций нет ни одного .up.sql")
+	}
+
+	for _, name := range up {
+		body, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatalf("чтение %s: %v", name, err)
+		}
+		if _, err := pool.Exec(ctx, string(body)); err != nil {
+			pool.Close()
+			t.Fatalf("миграция %s: %v", name, err)
+		}
+	}
+}
+
 func setup(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 
@@ -80,13 +114,15 @@ func setup(t *testing.T) *pgxpool.Pool {
 	cleanup := func() {
 		_, _ = pool.Exec(ctx, `DROP SCHEMA IF EXISTS `+`"`+testSchema+`"`+` CASCADE`)
 		_, _ = pool.Exec(ctx, `DROP TABLE IF EXISTS dashboard_widgets, dashboards, chat_messages,
-			chat_sessions, dataset_relations, dataset_columns, datasets, schema_migrations CASCADE`)
+			chat_sessions, dataset_relations, dataset_columns, datasets, sources,
+			schema_migrations CASCADE`)
 	}
 	cleanup()
 
-	if _, err := corepg.Migrate(ctx, pool, testSchema); err != nil {
+	applyMigrations(t, ctx, pool)
+	if err := corepg.EnsureRawSchema(ctx, pool, testSchema); err != nil {
 		pool.Close()
-		t.Fatalf("миграции: %v", err)
+		t.Fatalf("схема сырых данных: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanup()
