@@ -10,12 +10,11 @@ RUN go mod download
 
 COPY . .
 ARG VERSION=docker
+# Миграции накатывает отдельный контейнер migrate поверх ./migrations,
+# поэтому в образ попадает только API.
 RUN CGO_ENABLED=0 GOOS=linux go build \
         -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-        -o /out/aibi ./cmd/api \
-    && CGO_ENABLED=0 GOOS=linux go build \
-        -trimpath -ldflags "-s -w" \
-        -o /out/aibi-migrate ./cmd/migrate
+        -o /out/aibi ./cmd/api
 
 # ── Запуск ───────────────────────────────────────────────────────────
 FROM alpine:3.21
@@ -25,7 +24,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 USER aibi
 
 WORKDIR /app
-COPY --from=build /out/aibi /out/aibi-migrate /usr/local/bin/
+COPY --from=build /out/aibi /usr/local/bin/
 
 ENV HTTP_ADDR=:8080
 EXPOSE 8080
