@@ -184,12 +184,37 @@ func (c *Client) Ping(ctx context.Context) error {
 		return fmt.Errorf("%w: %v", apperr.ErrLLMUnavailable, err)
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("%w: %s", apperr.ErrLLMUnavailable, resp.Status)
 	}
-	return nil
+	return c.checkModelListed(body)
+}
+
+func (c *Client) checkModelListed(body []byte) error {
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil {
+		return nil
+	}
+	if len(list.Data) == 0 {
+		return fmt.Errorf("%w: на сервере нет ни одной модели, нужна %q",
+			apperr.ErrLLMUnavailable, c.model)
+	}
+
+	available := make([]string, 0, len(list.Data))
+	for _, m := range list.Data {
+		if m.ID == c.model {
+			return nil
+		}
+		available = append(available, m.ID)
+	}
+	return fmt.Errorf("%w: модели %q нет на сервере, доступны: %s",
+		apperr.ErrLLMUnavailable, c.model, strings.Join(available, ", "))
 }
 
 func snippet(b []byte) string {
