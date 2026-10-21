@@ -14,11 +14,13 @@ function readStored() {
 // useTheme хранит тему в атрибуте документа — от него зависят CSS-токены,
 // из которых движок графиков читает цвета.
 export function useTheme() {
+  // Светлая тема — основная: в ней задан язык оформления платформы.
+  // Тёмная включается только по явному предпочтению системы или выбору.
   const [theme, setTheme] = useState(() => {
     const stored = readStored();
     if (stored) return stored;
-    const prefersLight = window.matchMedia?.("(prefers-color-scheme: light)").matches;
-    return prefersLight ? "light" : "dark";
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
   });
 
   useEffect(() => {

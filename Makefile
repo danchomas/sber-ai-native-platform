@@ -32,6 +32,10 @@ front-build: ## Собрать интерфейс
 front-test: ## Тесты интерфейса
 	cd frontend && npm ci && npm test
 
+.PHONY: front-shots
+front-shots: ## Снимки интерфейса на разных ширинах (нужен поднятый стенд)
+	cd frontend && mkdir -p .screenshots && npm run shots -- http://localhost:3000/ .screenshots
+
 .PHONY: migrate
 migrate: ## Применить миграции (контейнер migrate поверх ./migrations)
 	docker compose run --rm migrate

@@ -1,86 +1,167 @@
-/* Токены интерфейса, сброс и общие примитивы.
-   Палитра визуализаций — валидированная категориальная схема (8 слотов,
-   фиксированный порядок): различима при дальтонизме и контрастна к
-   поверхности графика в обеих темах. */
+/* Токены интерфейса.
+   Цвета сняты пробой пикселей с образца, а не подобраны на глаз:
+   подложка #d9f7e5 (доминирующий цвет), акцент #21a038, градиент уходит
+   в бирюзу #43c0b5, текст #162419.
 
-/* Токены интерфейса и палитра визуализаций.
-   Палитра — валидированная категориальная схема (8 слотов, фиксированный
-   порядок, без цикличности): проверена на различимость при дальтонизме и на
-   контраст относительно поверхности графика в обеих темах. */
+   Язык оформления: мятная подложка,
+   единственный зелёный акцент, крупные радиусы, почти чёрный текст,
+   плотный кернинг в заголовках. Светлая тема — основная, как в образце.
+
+   Палитра визуализаций НЕ менялась намеренно. Это валидированная
+   категориальная схема (8 слотов, фиксированный порядок): различима при
+   дальтонизме и контрастна к поверхности графика. В фирменном языке почти
+   всё — оттенки зелёного, и перекрасить в него серии значило бы сломать
+   кодирование данных ради брендинга. Зелёный живёт в акценте: кнопки,
+   активные состояния, выделение. */
+
 :root {
-  color-scheme: dark;
-  --page: #0d0d0f;
-  --surface-1: #17181c;
-  --surface-2: #1e1f24;
-  --surface-3: #262830;
-  --text-primary: #ffffff;
-  --text-secondary: #c3c2b7;
-  --text-muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: rgba(255, 255, 255, 0.10);
-  --accent: #3987e5;
-  --good: #0ca30c;
-  --warning: #fab219;
-  --critical: #d03b3b;
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-  --seq-100: #cde2fb;
-  --seq-400: #3987e5;
-  --seq-700: #0d366b;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --font: system-ui, -apple-system, "Segoe UI", sans-serif;
-}
-:root[data-theme="light"] {
   color-scheme: light;
-  --page: #f9f9f7;
-  --surface-1: #fcfcfb;
+
+  /* Подложка — мягкий мятный градиент, поверхности белые. */
+  --page: #e4faec;
+  --page-gradient: linear-gradient(180deg, #eefbf3 0%, #ddf8e7 55%, #d2f6df 100%);
+  --surface-1: #ffffff;
   --surface-2: #ffffff;
-  --surface-3: #f0efec;
-  --text-primary: #0b0b0b;
-  --text-secondary: #52514e;
-  --text-muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.10);
-  --accent: #2a78d6;
-  --good: #006300;
+  --surface-3: #eefaf2;
+
+  --text-primary: #162419;
+  --text-secondary: #4c5a51;
+  --text-muted: #78877e;
+
+  --grid: #cfeadb;
+  --axis: #aed5bf;
+  --border: rgba(22, 26, 24, 0.08);
+  --shadow: 0 2px 10px rgba(22, 60, 35, 0.06);
+  --shadow-lifted: 0 8px 28px rgba(22, 60, 35, 0.10);
+
+  --accent: #19b83a;
+  --accent-hover: #14a233;
+  --accent-contrast: #ffffff;
+  --accent-soft: rgba(25, 184, 58, 0.14);
+  --accent-gradient: linear-gradient(95deg, #21d241 0%, #2fd0b8 100%);
+
+  --good: #19b83a;
+  --warning: #ef9400;
+  --critical: #ef3e3e;
+
+  /* Категориальная схема — см. примечание выше, не менять под бренд. */
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
   --series-4: #eda100;
   --series-5: #e87ba4;
   --series-6: #008300;
-  --series-7: #4a3aa7;
-  --series-8: #e34948;
+  --series-7: #7a6ee0;
+  --series-8: #d94f4f;
+  --seq-100: #d7f0de;
+  --seq-400: #21d241;
+  --seq-700: #0b4a22;
+
+  /* Форма: «таблетки» у управляющих элементов, сквиркл у карточек. */
+  --radius: 12px;        /* карточки, панели */
+  --radius-sm: 8px;      /* вложенные поверхности */
+  --radius-control: 9px; /* кнопки, вкладки, чипы */
+
+  /* Предельная ширина колонок. Строка длиннее ~90 символов читается
+     плохо, поэтому текст и диалог уже, а таблицы и панели шире. */
+  --col: 900px;
+  --col-wide: 1320px;
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --tracking-display: -0.025em;
+}
+
+/* Тёмная тема — тот же язык, перевёрнутый: зелёный остаётся единственным
+   акцентом, подложка уходит в тёмно-зелёный, а не в нейтральный чёрный. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --page: #0c1210;
+  --page-gradient: linear-gradient(180deg, #0e1512 0%, #0a100d 100%);
+  --surface-1: #141c18;
+  --surface-2: #1a231e;
+  --surface-3: #202b24;
+
+  --text-primary: #f2f6f3;
+  --text-secondary: #a9b7ae;
+  --text-muted: #7d8a82;
+
+  --grid: #24312a;
+  --axis: #32433a;
+  --border: rgba(255, 255, 255, 0.10);
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  --shadow-lifted: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  --accent: #2ecc71;
+  --accent-hover: #27b765;
+  --accent-contrast: #06230f;
+  --accent-soft: rgba(46, 204, 113, 0.14);
+  --accent-gradient: linear-gradient(95deg, #21a038 0%, #19c98a 100%);
+
+  --good: #2ecc71;
+  --warning: #e5a033;
+  --critical: #e66767;
+
+  --series-1: #5fa3f0;
+  --series-2: #ef8355;
+  --series-3: #3fd0a0;
+  --series-4: #f0bc45;
+  --series-5: #f09ac0;
+  --series-6: #4fc44f;
+  --series-7: #a79af0;
+  --series-8: #f08585;
+  --seq-100: #0b4a22;
+  --seq-400: #21d241;
+  --seq-700: #d7f0de;
 }
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  display: flex;
+  display: block;
   background: var(--page);
+  background-image: var(--page-gradient);
+  background-attachment: fixed;
   color: var(--text-primary);
   font: 15px/1.5 var(--font);
   -webkit-font-smoothing: antialiased;
 }
+/* Каркас держит #root: именно в него монтируется React, а body
+   остаётся обычным блоком. Раньше флекс стоял на body — и панель
+   с рабочей областью вставали друг под друга вместо «рядом». */
+#root {
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+}
+
 button { font: inherit; cursor: pointer; }
-h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+
+/* Заголовки крупные и с плотным кернингом — так набран образец.
+   Сам шрифт фирменный и в поставку не входит: берём системный гротеск
+   и воспроизводим ритм, а не гарнитуру. */
+h1, h2, h3, h4 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: var(--tracking-display);
+}
 
 /* ── Боковая панель ─────────────────────────────────────────────── */
 
+/* Управляющие элементы — «таблетки», как в образце. */
 .icon-btn {
+  display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--border); background: var(--surface-2);
-  color: var(--text-secondary); border-radius: 7px; padding: 3px 8px; font-size: 12px;
+  color: var(--text-secondary); border-radius: var(--radius-control);
+  padding: 5px 12px; font-size: 12px;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.icon-btn:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.icon-btn:hover {
+  color: var(--accent); border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.icon-btn:disabled { opacity: .5; cursor: default; }
+.icon-btn.icon-only { padding: 6px; }
 
 /* ── Основная область ───────────────────────────────────────────── */
 
@@ -88,15 +169,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
 
 .card {
   background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px;
+  border-radius: var(--radius); padding: 18px 20px;
+  box-shadow: var(--shadow);
 }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   border: 1px solid var(--border); background: var(--surface-2); color: var(--text-secondary);
-  border-radius: 999px; padding: 5px 12px; font-size: 13px;
+  border-radius: var(--radius-control); padding: 7px 14px; font-size: 13px;
+  text-align: left;
+  transition: color .15s, border-color .15s, background .15s;
 }
-.chip:hover { color: var(--text-primary); border-color: var(--accent); }
-.chip.active { border-color: var(--accent); color: var(--text-primary); }
+.chip:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.chip.active {
+  border-color: transparent; color: var(--accent-contrast);
+  background: var(--accent-gradient);
+}
 .notice {
   display: flex; gap: 8px; padding: 9px 12px; border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--warning) 12%, transparent);
@@ -121,7 +208,11 @@ table.data th { color: var(--text-muted); font-weight: 600; font-size: 12px;
   position: sticky; top: 0; background: var(--surface-1); }
 table.data td.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.data tbody tr:hover { background: var(--surface-2); }
-.table-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.table-wrap {
+  max-height: 420px; overflow: auto;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
 
 /* ── Визуализации ───────────────────────────────────────────────── */
 

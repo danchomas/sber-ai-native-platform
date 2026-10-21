@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 
+import { Icon } from "./Icon.jsx";
+
 export function Modal({ title, onClose, children, footer }) {
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -12,7 +14,9 @@ export function Modal({ title, onClose, children, footer }) {
       <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} title="Закрыть">✕</button>
+          <button className="icon-btn icon-only" onClick={onClose} title="Закрыть" aria-label="Закрыть">
+            <Icon name="close" size={15} />
+          </button>
         </div>
         <div className="modal-body">{children}</div>
         {footer ? <div className="modal-foot">{footer}</div> : null}

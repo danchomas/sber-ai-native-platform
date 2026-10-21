@@ -7,3 +7,4 @@ coverage.out
 # Фронтенд
 /frontend/node_modules/
 /frontend/dist/
+/frontend/.screenshots/

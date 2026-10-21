@@ -8,8 +8,10 @@
 }
 .msg.user .who { background: var(--accent); color: #fff; }
 .msg .body { min-width: 0; flex: 1; }
-.msg.user .text { background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 14px; display: inline-block; }
+.msg.user .text {
+  background: var(--accent-soft); border: 1px solid transparent;
+  border-radius: var(--radius); padding: 11px 16px; display: inline-block;
+}
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg .meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; font-variant-numeric: tabular-nums; }
 .answer-extras { margin-top: 14px; display: flex; flex-direction: column; gap: 12px; }
@@ -21,21 +23,47 @@ details.sql pre {
   font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; color: var(--text-secondary);
 }
 
-.composer { border-top: 1px solid var(--border); background: var(--surface-1); padding: 14px 28px 18px; }
-.composer-inner { max-width: 1040px; margin: 0 auto; }
+.composer { padding: 10px 24px 18px; }
+.composer-inner { max-width: var(--col); margin: 0 auto; }
+/* Поле ввода — отдельная приподнятая поверхность, как несущие элементы
+   в образце, а не полоса, приклеенная к низу экрана. */
 .composer-box {
   display: flex; gap: 10px; align-items: flex-end;
-  background: var(--surface-2); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 10px 12px;
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 10px 10px 16px;
+  box-shadow: var(--shadow-lifted);
+  transition: border-color .15s;
 }
 .composer-box:focus-within { border-color: var(--accent); }
 .composer textarea {
   flex: 1; border: 0; background: transparent; color: var(--text-primary);
   resize: none; font: inherit; max-height: 160px; outline: none;
 }
+/* Основное действие — зелёная «таблетка» с градиентом. */
 .send {
-  border: 0; border-radius: var(--radius-sm); padding: 8px 16px;
-  background: var(--accent); color: #fff; font-weight: 600;
+  border: 0; border-radius: var(--radius-control); padding: 10px 22px;
+  background: var(--accent-gradient); color: var(--accent-contrast);
+  font-weight: 600; letter-spacing: -0.01em;
+  transition: filter .15s, box-shadow .15s;
 }
+.send:hover:not(:disabled) { filter: brightness(1.05); box-shadow: var(--shadow); }
 .send:disabled { opacity: 0.5; cursor: default; }
 .hint { margin: 8px 2px 0; font-size: 12px; color: var(--text-muted); }
+
+/* Пустой диалог центрируется по вертикали: иначе приветствие висит
+   под шапкой, а под ним остаётся полэкрана пустоты. */
+.thread-empty {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+@media (max-width: 560px) {
+  /* На узком экране кнопка уходит под поле: иначе на ввод остаётся
+     полоска в полтора слова. */
+  .composer-box { flex-direction: column; align-items: stretch; padding: 12px; }
+  .composer textarea { min-height: 44px; }
+  .composer .send { width: 100%; }
+  .hint { font-size: 11px; }
+}
