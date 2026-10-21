@@ -41,7 +41,7 @@ details.sql pre {
 }
 /* Основное действие — зелёная «таблетка» с градиентом. */
 .send {
-  border: 0; border-radius: var(--radius-pill); padding: 10px 22px;
+  border: 0; border-radius: var(--radius-control); padding: 10px 22px;
   background: var(--accent-gradient); color: var(--accent-contrast);
   font-weight: 600; letter-spacing: -0.01em;
   transition: filter .15s, box-shadow .15s;

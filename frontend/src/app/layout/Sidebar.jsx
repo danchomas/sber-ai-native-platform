@@ -1,5 +1,6 @@
 import { VIEWS } from "../navigation.js";
 import { fmtDateTime } from "../../shared/lib/format.js";
+import { Icon } from "../../shared/ui/Icon.jsx";
 
 // Sidebar — навигация, список диалогов и состояние платформы.
 export function Sidebar({
@@ -30,7 +31,8 @@ export function Sidebar({
             aria-current={view === v.id ? "page" : "false"}
             onClick={() => onView(v.id)}
           >
-            {v.icon} {v.title}
+            <Icon name={v.icon} />
+            <span className="nav-label">{v.title}</span>
             <span className="count">{counts[v.id] || ""}</span>
           </button>
         ))}
@@ -39,7 +41,10 @@ export function Sidebar({
       <div className="side-section">
         <div className="side-head">
           <span>Диалоги</span>
-          <button className="icon-btn" onClick={onNewSession}>+ новый</button>
+          <button className="icon-btn" onClick={onNewSession} title="Новый диалог">
+            <Icon name="plus" size={14} />
+            новый
+          </button>
         </div>
         <div className="side-list">
           {sessions.map((s) => (
@@ -62,12 +67,13 @@ export function Sidebar({
           {health.text}
         </span>
         <button
-          className="icon-btn"
+          className="icon-btn icon-only"
           style={{ marginLeft: "auto" }}
           onClick={onToggleTheme}
           title="Сменить тему"
+          aria-label="Сменить тему"
         >
-          ◐
+          <Icon name="theme" size={15} />
         </button>
       </div>
     </aside>

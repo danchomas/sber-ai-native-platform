@@ -34,7 +34,7 @@
 .nav { display: flex; flex-direction: column; gap: 2px; }
 .nav button {
   display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border: 0; border-radius: var(--radius-pill);
+  padding: 10px 14px; border: 0; border-radius: var(--radius-control);
   background: transparent; color: var(--text-secondary); text-align: left;
   transition: background .15s, color .15s;
 }
@@ -45,6 +45,7 @@
   font-weight: 600;
 }
 .nav button[aria-current="page"] .count { color: var(--accent-contrast); opacity: .85; }
+.nav-label { flex: 1; }
 .nav .count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 .side-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1; }
