@@ -17,7 +17,7 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
       </div>
 
       <div className="scroll">
-        <div style={{ maxWidth: 1280, margin: "0 auto" }}>
+        <div className="col-wide">
           <div className="chips" style={{ marginBottom: 18 }}>
             {items.map((d) => (
               <button

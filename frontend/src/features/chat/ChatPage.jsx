@@ -29,7 +29,7 @@ export function ChatPage({ active, theme, sessions, onOpenDashboard }) {
       </div>
 
       <div className="scroll" ref={scroll}>
-        <div className="thread">
+        <div className={`thread col${messages.length === 0 && !busy ? " thread-empty" : ""}`}>
           {error ? <ErrorBanner error={error} /> : null}
 
           {messages.length === 0 && !busy ? <Welcome onAsk={ask} /> : null}

@@ -31,7 +31,7 @@ export function SourcesPage({ active, onCatalogChanged }) {
       </div>
 
       <div className="scroll">
-        <div className="grid" style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div className="grid col-wide">
           <div className="row">
             <button className="send" onClick={() => setDialog(true)}>
               Подключить базу

@@ -83,3 +83,82 @@
 }
 .view-head p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .scroll { flex: 1; overflow-y: auto; padding: 22px 28px 40px; }
+
+/* ── Ширина колонок ─────────────────────────────────────────────────
+   Строка длиннее ~90 символов читается плохо, поэтому содержимое
+   ограничено по ширине и центрировано, а не растянуто до края экрана.
+   Табличным разделам (данные, дашборды) предел шире — им нужна площадь. */
+
+/* Полоса шапки тянется во всю ширину ради разделителя, а её содержимое
+   выравнивается по той же колонке, что и всё остальное. Центрируем
+   отступами, а не обёрткой: разметку страниц это не затрагивает. */
+.view-head {
+  padding: 22px max(32px, calc((100% - var(--col-wide)) / 2)) 18px;
+}
+.view-head h2 { font-size: 26px; }
+
+.scroll { padding-inline: 32px; }
+
+.col {
+  max-width: var(--col);
+  margin-inline: auto;
+  width: 100%;
+}
+.col-wide { max-width: var(--col-wide); }
+
+/* ── Контрольные точки ──────────────────────────────────────────────
+   Ширины выбраны по содержимому, а не по моделям устройств:
+   1560 — помещается широкая колонка с полями;
+   1100 — панель начинает теснить рабочую область;
+    880 — панель больше не окупает своё место и уезжает наверх. */
+
+@media (min-width: 1560px) {
+  :root { --col: 960px; --col-wide: 1480px; }
+  .scroll { padding-inline: 40px; }
+  .view-head { padding-inline: max(40px, calc((100% - var(--col-wide)) / 2)); }
+}
+
+@media (max-width: 1100px) {
+  .sidebar { width: 232px; flex-basis: 232px; }
+  .view-head, .scroll { padding-inline: 22px; }
+}
+
+@media (max-width: 880px) {
+  /* Панель становится верхней полосой: навигация в строку, список
+     диалогов скрыт — на узком экране он занимает больше, чем даёт. */
+  #root { flex-direction: column; }
+
+  .sidebar {
+    width: auto; flex: 0 0 auto;
+    margin: 10px 10px 0;
+    padding: 12px 14px;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    overflow-x: auto;
+  }
+  /* Название платформы на узком экране съедает три строки — остаётся знак. */
+  .sidebar .brand { flex: 0 0 auto; }
+  .sidebar .brand > div { display: none; }
+  .nav { flex-direction: row; gap: 6px; }
+  .nav button { white-space: nowrap; padding: 8px 14px; }
+  .side-section { display: none; }
+  .status { margin-left: auto; border: 0; padding: 0; white-space: nowrap; }
+  .status span:not(.dot) { display: none; }
+
+  /* Заголовок и подпись встают друг под друга: рядом они обе переносятся. */
+  .view-head {
+    padding: 16px 16px 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .view-head h2 { font-size: 21px; }
+  .scroll { padding-inline: 16px; }
+}
+
+@media (max-width: 560px) {
+  .sidebar { margin: 8px 8px 0; }
+  .view-head, .scroll { padding-inline: 12px; }
+  .card { padding: 14px 16px; border-radius: var(--radius-sm); }
+}

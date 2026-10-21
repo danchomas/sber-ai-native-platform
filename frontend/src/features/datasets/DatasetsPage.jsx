@@ -15,7 +15,7 @@ export function DatasetsPage({ active, theme, datasets }) {
       </div>
 
       <div className="scroll">
-        <div className="grid" style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div className="grid col-wide">
           <Dropzone onUpload={datasets.upload} />
 
           <ErrorBanner error={datasets.error} onRetry={datasets.reload} />

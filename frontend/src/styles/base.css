@@ -1,5 +1,9 @@
 /* Токены интерфейса.
-   Язык оформления снят с публичной страницы Сбера: мятная подложка,
+   Цвета сняты пробой пикселей с образца, а не подобраны на глаз:
+   подложка #d9f7e5 (доминирующий цвет), акцент #21a038, градиент уходит
+   в бирюзу #43c0b5, текст #162419.
+
+   Язык оформления: мятная подложка,
    единственный зелёный акцент, крупные радиусы, почти чёрный текст,
    плотный кернинг в заголовках. Светлая тема — основная, как в образце.
 
@@ -14,29 +18,29 @@
   color-scheme: light;
 
   /* Подложка — мягкий мятный градиент, поверхности белые. */
-  --page: #e9f6ec;
-  --page-gradient: linear-gradient(180deg, #eef9f0 0%, #e2f3e7 100%);
+  --page: #d9f7e5;
+  --page-gradient: linear-gradient(180deg, #e7f8f1 0%, #d9f7e5 55%, #d1f5dd 100%);
   --surface-1: #ffffff;
   --surface-2: #ffffff;
-  --surface-3: #f2faf4;
+  --surface-3: #eefaf2;
 
-  --text-primary: #161a18;
-  --text-secondary: #58635c;
-  --text-muted: #8b958f;
+  --text-primary: #162419;
+  --text-secondary: #4c5a51;
+  --text-muted: #78877e;
 
-  --grid: #dceee1;
-  --axis: #bcd8c4;
+  --grid: #cfeadb;
+  --axis: #aed5bf;
   --border: rgba(22, 26, 24, 0.08);
   --shadow: 0 2px 10px rgba(22, 60, 35, 0.06);
   --shadow-lifted: 0 8px 28px rgba(22, 60, 35, 0.10);
 
-  --accent: #0f9d4f;
-  --accent-hover: #0b8743;
+  --accent: #21a038;
+  --accent-hover: #179528;
   --accent-contrast: #ffffff;
-  --accent-soft: rgba(15, 157, 79, 0.10);
-  --accent-gradient: linear-gradient(95deg, #21a038 0%, #11b67a 100%);
+  --accent-soft: rgba(33, 160, 56, 0.12);
+  --accent-gradient: linear-gradient(95deg, #21a038 0%, #43c0b5 100%);
 
-  --good: #0f9d4f;
+  --good: #21a038;
   --warning: #c77700;
   --critical: #d03b3b;
 
@@ -57,6 +61,11 @@
   --radius: 20px;
   --radius-sm: 14px;
   --radius-pill: 999px;
+
+  /* Предельная ширина колонок. Строка длиннее ~90 символов читается
+     плохо, поэтому текст и диалог уже, а таблицы и панели шире. */
+  --col: 900px;
+  --col-wide: 1320px;
 
   --font: system-ui, -apple-system, "Segoe UI", "Noto Sans", sans-serif;
   --tracking-display: -0.025em;
@@ -109,7 +118,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  display: flex;
+  display: block;
   background: var(--page);
   background-image: var(--page-gradient);
   background-attachment: fixed;
@@ -117,6 +126,15 @@ body {
   font: 15px/1.5 var(--font);
   -webkit-font-smoothing: antialiased;
 }
+/* Каркас держит #root: именно в него монтируется React, а body
+   остаётся обычным блоком. Раньше флекс стоял на body — и панель
+   с рабочей областью вставали друг под друга вместо «рядом». */
+#root {
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+}
+
 button { font: inherit; cursor: pointer; }
 
 /* Заголовки крупные и с плотным кернингом — так набран образец.
