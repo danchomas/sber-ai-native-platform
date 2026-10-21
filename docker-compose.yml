@@ -61,7 +61,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       LLM_ENABLED: ${LLM_ENABLED:-true}
       LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:14b}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:7b}
       LLM_API_KEY: ${LLM_API_KEY:-}
       QUERY_MAX_ROWS: ${QUERY_MAX_ROWS:-5000}
     ports:
