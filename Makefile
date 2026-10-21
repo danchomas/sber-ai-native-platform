@@ -3,7 +3,7 @@ BINARY      := bin/aibi
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
 TEST_PG_DSN ?= postgres://aibi:aibi@localhost:5432/aibi_test?sslmode=disable
-LLM_MODEL   ?= qwen2.5-coder:14b
+LLM_MODEL   ?= qwen2.5-coder:7b
 
 .DEFAULT_GOAL := help
 
