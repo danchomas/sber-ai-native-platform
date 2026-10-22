@@ -39,7 +39,7 @@ type CatalogEntry struct {
 	Name          string `json:"name"`
 	ContextLength int    `json:"context_length"`
 	PromptPrice   string `json:"prompt_price,omitempty"`
-	JSONMode      bool   `json:"json_mode"`
+	JSONMode      *bool  `json:"json_mode,omitempty"`
 	Free          bool   `json:"free"`
 }
 
@@ -81,14 +81,18 @@ func (c *Client) Catalog(ctx context.Context) ([]CatalogEntry, error) {
 
 	out := make([]CatalogEntry, 0, len(parsed.Data))
 	for _, m := range parsed.Data {
-		out = append(out, CatalogEntry{
+		e := CatalogEntry{
 			ID:            m.ID,
 			Name:          orFallback(m.Name, m.ID),
 			ContextLength: m.ContextLength,
 			PromptPrice:   m.Pricing.Prompt,
-			JSONMode:      slices.Contains(m.Supported, "response_format"),
 			Free:          isFreePrice(m.Pricing.Prompt),
-		})
+		}
+		if len(m.Supported) > 0 {
+			jsonMode := slices.Contains(m.Supported, "response_format")
+			e.JSONMode = &jsonMode
+		}
+		out = append(out, e)
 	}
 	return out, nil
 }

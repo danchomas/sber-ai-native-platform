@@ -128,6 +128,10 @@ func (c *fakeCatalog) Scopes(context.Context) ([]domain.Scope, error) {
 
 func (c *fakeCatalog) Schema() string { return "raw" }
 
+type fixedModel struct{ model domain.LLM }
+
+func (f fixedModel) Current(context.Context) domain.LLM { return f.model }
+
 type fakeExecutor struct {
 	result   *domain.ResultSet
 	err      error
