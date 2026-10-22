@@ -111,6 +111,7 @@ func TestValidateCollectsTables(t *testing.T) {
 	if len(res.Tables) != 2 {
 		t.Fatalf("ожидались две таблицы, получено: %v", res.Tables)
 	}
+
 	want := map[string]bool{"raw.ds_users": true, "raw.ds_orders": true}
 	for _, got := range res.Tables {
 		if !want[got] {
@@ -120,6 +121,7 @@ func TestValidateCollectsTables(t *testing.T) {
 }
 
 func TestSourcePolicyIsolatesSchemas(t *testing.T) {
+
 	p := NewSourcePolicy("sales", []TableName{
 		{Schema: "sales", Table: "orders"},
 		{Schema: "crm", Table: "clients"},
@@ -131,12 +133,15 @@ func TestSourcePolicyIsolatesSchemas(t *testing.T) {
 	if _, err := Validate(`SELECT * FROM crm.clients LIMIT 5`, p); err != nil {
 		t.Errorf("вторая схема источника должна быть доступна: %v", err)
 	}
+
 	if _, err := Validate(`SELECT * FROM orders LIMIT 5`, p); err != nil {
 		t.Errorf("неполное имя должно разрешаться в схеме по умолчанию: %v", err)
 	}
+
 	if _, err := Validate(`SELECT * FROM raw.ds_users LIMIT 5`, p); err == nil {
 		t.Error("схема чужого источника должна быть отклонена")
 	}
+
 	if _, err := Validate(`SELECT * FROM sales.secrets LIMIT 5`, p); err == nil {
 		t.Error("таблица вне каталога должна быть отклонена")
 	}

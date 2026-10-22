@@ -22,6 +22,7 @@ func TestCheckModelListed(t *testing.T) {
 			body:  `{"object":"list","data":[{"id":"qwen2.5-coder:7b"},{"id":"llama3:8b"}]}`,
 		},
 		{
+
 			name:    "список пуст",
 			model:   "qwen2.5-coder:7b",
 			body:    `{"object":"list","data":[]}`,
@@ -36,6 +37,7 @@ func TestCheckModelListed(t *testing.T) {
 			wantIn:  "llama3:8b, mistral:7b",
 		},
 		{
+
 			name:  "ответ не разобрался — проверка не мешает",
 			model: "qwen2.5-coder:7b",
 			body:  `не json`,

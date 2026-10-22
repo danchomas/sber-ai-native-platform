@@ -19,7 +19,9 @@ type SourceRepository interface {
 
 type SourceIntrospector interface {
 	Ping(ctx context.Context, s *domain.Source) error
+
 	Tables(ctx context.Context, s *domain.Source) ([]domain.ExternalTable, error)
+
 	Columns(ctx context.Context, s *domain.Source, schema, table string) ([]domain.Column, error)
 }
 

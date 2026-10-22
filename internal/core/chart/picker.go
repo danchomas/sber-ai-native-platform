@@ -23,6 +23,7 @@ func Pick(rs *domain.ResultSet, title string) domain.ChartSpec {
 	})
 
 	switch {
+
 	case len(rs.Rows) == 1 && len(rs.Columns) == 1 && len(numeric) == 1:
 		spec.Type = domain.ChartTypeKPI
 		spec.Y = []string{rs.Columns[0].Name}
@@ -138,6 +139,7 @@ func Normalize(spec *domain.ChartSpec, rs *domain.ResultSet, title string) domai
 	if out.X == "" && len(out.Y) == 0 {
 		return fallback
 	}
+
 	if (out.Type == domain.ChartTypePie || out.Type == domain.ChartTypeDonut) && len(rs.Rows) > 12 {
 		out.Type = domain.ChartTypeHBar
 		out.Reason = "слишком много секторов для круговой диаграммы, показаны столбцы"

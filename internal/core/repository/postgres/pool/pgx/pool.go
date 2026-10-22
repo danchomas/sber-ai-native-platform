@@ -64,6 +64,7 @@ func NewPool(ctx context.Context, opts PoolOptions) (*pgxpool.Pool, error) {
 		pgCfg.ConnConfig.RuntimeParams["statement_timeout"] =
 			fmt.Sprintf("%d", opts.StatementTimeout.Milliseconds())
 	}
+
 	pgCfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
 
 	pool, err := pgxpool.NewWithConfig(ctx, pgCfg)

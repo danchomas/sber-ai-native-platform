@@ -37,6 +37,7 @@ func SanitizeIdentifier(raw string) string {
 			sb.WriteString(translit[r])
 			prevUnderscore = false
 		case r == 'ъ' || r == 'ь':
+
 		default:
 			if !prevUnderscore && sb.Len() > 0 {
 				sb.WriteByte('_')
@@ -49,12 +50,14 @@ func SanitizeIdentifier(raw string) string {
 	if name == "" {
 		return ""
 	}
+
 	if name[0] >= '0' && name[0] <= '9' {
 		name = "c_" + name
 	}
 	if _, reserved := reservedWords[name]; reserved {
 		name += "_col"
 	}
+
 	if len(name) > 55 {
 		name = strings.Trim(name[:55], "_")
 	}

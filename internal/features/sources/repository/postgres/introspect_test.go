@@ -25,6 +25,7 @@ func TestColumnTypeFromPG(t *testing.T) {
 		{"character varying(255)", domain.ColumnTypeText},
 		{"text", domain.ColumnTypeText},
 		{"uuid", domain.ColumnTypeText},
+
 		{"jsonb", domain.ColumnTypeText},
 		{"integer[]", domain.ColumnTypeText},
 		{"  TEXT  ", domain.ColumnTypeText},

@@ -27,6 +27,7 @@ func JSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
 		return
 	}
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
+
 		logger.From(r.Context()).Error("ответ не сериализован", "error", err)
 	}
 }

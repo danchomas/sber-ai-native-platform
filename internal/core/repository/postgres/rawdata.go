@@ -65,6 +65,7 @@ func (r *RawDataRepository) CreateTable(ctx context.Context, table string, cols 
 		if _, err := tx.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("создание таблицы %s: %w", table, MapError(err))
 		}
+
 		for _, c := range cols {
 			if c.SourceName == "" || c.SourceName == c.Name {
 				continue
@@ -266,6 +267,7 @@ func (r *RawDataRepository) Sample(ctx context.Context, ref domain.TableRef, lim
 }
 
 func (r *RawDataRepository) ValueOverlap(ctx context.Context, left, right domain.TableRef) (float64, int64, error) {
+
 	if !left.SameSource(right) {
 		return 0, 0, nil
 	}

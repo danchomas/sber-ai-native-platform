@@ -2,10 +2,21 @@
 BINARY      := bin/aibi
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
-TEST_PG_DSN ?= postgres://aibi:aibi@localhost:5432/aibi_test?sslmode=disable
-LLM_MODEL   ?= qwen2.5-coder:7b
+# Настройки берутся из .env — того же файла, что читает docker compose.
+# Зашитых учётных данных в проекте нет ни одного места.
+-include .env
+export
+
+# Строка подключения к тестовой базе собирается из тех же переменных.
+TEST_PG_DSN ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)_test?sslmode=disable
+COMPOSE_DSN := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 
 .DEFAULT_GOAL := help
+
+.PHONY: env
+env: ## Создать .env из шаблона, если его нет
+	@test -f .env || (cp .env.example .env && echo "создан .env из .env.example")
+	@test -f .env && echo ".env на месте"
 
 .PHONY: help
 help: ## Список целей
@@ -43,7 +54,7 @@ migrate: ## Применить миграции (контейнер migrate по
 .PHONY: migrate-down
 migrate-down: ## Откатить одну миграцию
 	docker compose run --rm migrate -path=/migrations \
-		-database=postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable down 1
+		-database=$(COMPOSE_DSN) down 1
 
 .PHONY: migrate-new
 migrate-new: ## Создать пару файлов миграции: make migrate-new NAME=add_x
@@ -74,11 +85,11 @@ tidy: ## Привести go.mod в порядок
 	go mod tidy
 
 .PHONY: up
-up: ## Поднять стенд (PostgreSQL + API + интерфейс на :3000)
+up: env ## Поднять стенд (PostgreSQL + API + интерфейс)
 	docker compose up -d --build
 
 .PHONY: up-llm
-up-llm: ## Поднять стенд вместе с локальной моделью
+up-llm: env ## Поднять стенд вместе с локальной моделью
 	docker compose --profile llm up -d --build
 	@echo "Жду готовности Ollama…"
 	@until docker compose exec -T ollama ollama list >/dev/null 2>&1; do sleep 2; done

@@ -16,8 +16,10 @@ type RawDataRepository interface {
 	TimeSpan(ctx context.Context, ref TableRef, col Column) (*TimeSpan, error)
 	DuplicateRows(ctx context.Context, ref TableRef, cols []Column) (int64, error)
 	Sample(ctx context.Context, ref TableRef, limit int) (*ResultSet, error)
+
 	ValueOverlap(ctx context.Context, left, right TableRef) (share float64, matched int64, err error)
 
 	Query(ctx context.Context, target QueryTarget, sql string, maxRows int) (*ResultSet, error)
+
 	ExplainCost(ctx context.Context, target QueryTarget, sql string) (float64, error)
 }

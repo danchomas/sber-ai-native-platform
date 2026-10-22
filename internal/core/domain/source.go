@@ -53,6 +53,7 @@ type DatasetOrigin string
 
 const (
 	OriginUploaded DatasetOrigin = "uploaded"
+
 	OriginAttached DatasetOrigin = "attached"
 )
 

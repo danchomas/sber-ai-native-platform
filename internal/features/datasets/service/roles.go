@@ -64,6 +64,7 @@ func inferRole(c domain.Column, p *domain.ColumnProfile) domain.SemanticRole {
 		if p != nil && p.Unique() && nameIsID {
 			return domain.RoleIdentifier
 		}
+
 		if p != nil && p.DistinctCount > 0 && p.DistinctCount <= 12 && p.RowCount > 50 {
 			return domain.RoleDimension
 		}

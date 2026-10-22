@@ -3,14 +3,21 @@ package apperr
 import "errors"
 
 var (
-	ErrNotFound        = errors.New("объект не найден")
-	ErrAlreadyExists   = errors.New("объект уже существует")
-	ErrValidation      = errors.New("некорректные данные")
-	ErrUnsafeQuery     = errors.New("запрос отклонён политикой безопасности")
+	ErrNotFound = errors.New("объект не найден")
+
+	ErrAlreadyExists = errors.New("объект уже существует")
+
+	ErrValidation = errors.New("некорректные данные")
+
+	ErrUnsafeQuery = errors.New("запрос отклонён политикой безопасности")
+
 	ErrDatasetNotReady = errors.New("датасет не готов к анализу")
-	ErrNoDatasets      = errors.New("в каталоге нет загруженных данных")
-	ErrLLMUnavailable  = errors.New("языковая модель недоступна")
-	ErrQueryTimeout    = errors.New("превышено время выполнения запроса")
+
+	ErrNoDatasets = errors.New("в каталоге нет загруженных данных")
+
+	ErrLLMUnavailable = errors.New("языковая модель недоступна")
+
+	ErrQueryTimeout = errors.New("превышено время выполнения запроса")
 )
 
 type ValidationError struct {

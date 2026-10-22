@@ -96,6 +96,7 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 	for i := range d.Widgets {
 		i := i
 		g.Go(func() error {
+
 			scope, checked, err := sqlguard.ResolveScope(
 				d.Widgets[i].SQL, scopes, s.catalog.Schema(), s.cfg.MaxRows)
 			if err != nil {

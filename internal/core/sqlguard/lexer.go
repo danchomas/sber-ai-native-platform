@@ -82,6 +82,7 @@ func tokenize(sql string) ([]token, error) {
 					i++
 					break
 				}
+
 				if r[i] == '\\' && i+1 < len(r) {
 					i += 2
 					continue
@@ -118,6 +119,7 @@ func tokenize(sql string) ([]token, error) {
 			out = append(out, token{kind: tokQuotedIdent, text: sb.String(), pos: start})
 
 		case c == '$':
+
 			if tag, end, ok := dollarTag(r, i); ok {
 				closeIdx := indexRunes(r, end, tag)
 				if closeIdx < 0 {

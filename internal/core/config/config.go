@@ -84,8 +84,10 @@ func Load() (*Config, error) {
 			LogJSON:  boolean("LOG_JSON", false),
 		},
 		HTTP: HTTP{
-			Addr:            str("HTTP_ADDR", ":8080"),
-			ReadTimeout:     duration("HTTP_READ_TIMEOUT", 0),
+			Addr: str("HTTP_ADDR", ":8080"),
+
+			ReadTimeout: duration("HTTP_READ_TIMEOUT", 0),
+
 			WriteTimeout:    duration("HTTP_WRITE_TIMEOUT", 330*time.Second),
 			IdleTimeout:     duration("HTTP_IDLE_TIMEOUT", 90*time.Second),
 			ShutdownTimeout: duration("HTTP_SHUTDOWN_TIMEOUT", 15*time.Second),
@@ -136,6 +138,7 @@ func Load() (*Config, error) {
 
 func (c *Config) validate() error {
 	var errs []error
+
 	if c.HTTP.WriteTimeout > 0 && c.HTTP.WriteTimeout <= c.HTTP.RequestTimeout {
 		errs = append(errs, fmt.Errorf(
 			"HTTP_WRITE_TIMEOUT (%s) должен быть больше HTTP_REQUEST_TIMEOUT (%s)",

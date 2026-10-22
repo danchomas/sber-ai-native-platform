@@ -137,7 +137,8 @@ type env struct {
 	raw         *corepg.RawDataRepository
 	sessions    *chatpg.SessionRepository
 	dashes      *dashpg.DashboardRepository
-	datasets    *datasvc.Service
+
+	datasets *datasvc.Service
 }
 
 func newEnv(t *testing.T, pool *pgxpool.Pool) *env {
@@ -288,6 +289,7 @@ func TestGuardedQueryExecution(t *testing.T) {
 	ctx := context.Background()
 
 	report := upload(t, e, "orders", ordersCSV)
+
 	scopes, err := e.datasets.Scopes(ctx)
 	if err != nil {
 		t.Fatalf("области каталога: %v", err)
@@ -320,6 +322,7 @@ func TestGuardedQueryExecution(t *testing.T) {
 	})
 
 	t.Run("изменение данных невозможно", func(t *testing.T) {
+
 		_, err := e.raw.Query(ctx, target, `DELETE FROM `+report.Dataset.TableName, 10)
 		if err == nil {
 			t.Fatal("удаление данных прошло через read-only транзакцию")
@@ -430,6 +433,7 @@ func TestDashboardRoundTrip(t *testing.T) {
 	if loaded.Widgets[0].Chart.Type != domain.ChartTypeBar {
 		t.Errorf("спецификация визуализации не сохранена: %+v", loaded.Widgets[0].Chart)
 	}
+
 	if loaded.Widgets[1].Error == "" {
 		t.Error("ошибка второго виджета не зафиксирована")
 	}

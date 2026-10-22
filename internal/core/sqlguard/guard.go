@@ -185,6 +185,7 @@ func checkKeywords(tokens []token) error {
 			continue
 		}
 		up := t.upper()
+
 		reason, forbidden := forbiddenKeywords[up]
 		if !forbidden {
 			continue
@@ -227,6 +228,7 @@ func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 		default:
 			continue
 		}
+
 		if i+1 >= len(tokens) {
 			continue
 		}
@@ -237,6 +239,7 @@ func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 		if next.kind != tokWord && next.kind != tokQuotedIdent {
 			continue
 		}
+
 		if i+2 < len(tokens) && tokens[i+2].isPunct("(") {
 			continue
 		}
@@ -303,6 +306,7 @@ func collectCTENames(tokens []token) map[string]struct{} {
 			continue
 		}
 		j := i + 2
+
 		for j < len(tokens) && (tokens[j].isWord("MATERIALIZED") || tokens[j].isWord("NOT")) {
 			j++
 		}

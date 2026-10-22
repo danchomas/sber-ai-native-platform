@@ -45,6 +45,7 @@ func ExtractJSON(s string) (string, error) {
 		case r == '"':
 			inString = !inString
 		case inString:
+
 		case r == open:
 			depth++
 		case r == close:

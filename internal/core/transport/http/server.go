@@ -18,6 +18,7 @@ type Server struct {
 }
 
 func NewServer(cfg config.HTTP, h http.Handler, log *slog.Logger) *Server {
+
 	handler := http.TimeoutHandler(h, cfg.RequestTimeout, `{"error":{"code":"timeout","message":"Превышено время обработки запроса"}}`)
 
 	return &Server{

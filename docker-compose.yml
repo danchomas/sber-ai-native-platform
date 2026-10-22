@@ -1,48 +1,40 @@
-# Локальный стенд платформы. Внешние сервисы не требуются:
-# PostgreSQL, интерфейс и языковая модель поднимаются рядом в том же compose.
-#
-# Точка входа — frontend на :3000: он отдаёт интерфейс и проксирует /api
-# в api. Порт api наружу оставлен для curl и отладки.
 services:
   postgres:
     image: postgres:18-bookworm
     environment:
-      POSTGRES_USER: aibi
-      POSTGRES_PASSWORD: aibi
-      POSTGRES_DB: aibi
-      # Настройки под аналитическую нагрузку на одной машине.
-      POSTGRES_INITDB_ARGS: "--data-checksums"
+      POSTGRES_USER: ${POSTGRES_USER:?нужно задать POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?нужно задать POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?нужно задать POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: ${POSTGRES_INITDB_ARGS:?нужно задать POSTGRES_INITDB_ARGS}
     command:
       - postgres
       - -c
-      - shared_buffers=512MB
+      - shared_buffers=${PG_SHARED_BUFFERS:?нужно задать PG_SHARED_BUFFERS}
       - -c
-      - work_mem=32MB
+      - work_mem=${PG_WORK_MEM:?нужно задать PG_WORK_MEM}
       - -c
-      - maintenance_work_mem=256MB
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:?нужно задать PG_MAINTENANCE_WORK_MEM}
       - -c
-      - max_parallel_workers_per_gather=4
+      - max_parallel_workers_per_gather=${PG_MAX_PARALLEL_WORKERS:?нужно задать PG_MAX_PARALLEL_WORKERS}
       - -c
-      - jit=off
+      - jit=${PG_JIT:?нужно задать PG_JIT}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:?нужно задать POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aibi -d aibi"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  # Миграции схемы. Отдельный шаг, а не часть старта приложения: так
-  # понятно, кто и когда меняет базу, и откат делается тем же инструментом.
   migrate:
     image: migrate/migrate:v4.19.0
     volumes:
       - ./migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable
+      - -database=postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}?sslmode=disable
       - up
     depends_on:
       postgres:
@@ -53,19 +45,25 @@ services:
     build:
       context: .
       args:
-        VERSION: ${VERSION:-local}
+        VERSION: ${VERSION:?нужно задать VERSION}
     environment:
-      DATABASE_URL: postgres://aibi:aibi@postgres:5432/aibi?sslmode=disable
-      RAW_SCHEMA: raw
+      DATABASE_URL: postgres://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@postgres:5432/${POSTGRES_DB:?}?sslmode=disable
+      APP_ENV: ${APP_ENV:?нужно задать APP_ENV}
+      LOG_LEVEL: ${LOG_LEVEL:?нужно задать LOG_LEVEL}
+      LOG_JSON: ${LOG_JSON:?нужно задать LOG_JSON}
+      RAW_SCHEMA: ${RAW_SCHEMA:?нужно задать RAW_SCHEMA}
       HTTP_ADDR: ":8080"
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      LLM_ENABLED: ${LLM_ENABLED:-true}
-      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
-      LLM_MODEL: ${LLM_MODEL:-qwen2.5-coder:7b}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      QUERY_MAX_ROWS: ${QUERY_MAX_ROWS:-5000}
+      HTTP_REQUEST_TIMEOUT: ${HTTP_REQUEST_TIMEOUT:?нужно задать HTTP_REQUEST_TIMEOUT}
+      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:?нужно задать HTTP_WRITE_TIMEOUT}
+      QUERY_MAX_ROWS: ${QUERY_MAX_ROWS:?нужно задать QUERY_MAX_ROWS}
+      QUERY_TIMEOUT: ${QUERY_TIMEOUT:?нужно задать QUERY_TIMEOUT}
+      INGEST_MAX_UPLOAD_MB: ${INGEST_MAX_UPLOAD_MB:?нужно задать INGEST_MAX_UPLOAD_MB}
+      LLM_ENABLED: ${LLM_ENABLED:?нужно задать LLM_ENABLED}
+      LLM_BASE_URL: ${LLM_BASE_URL:?нужно задать LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL:?нужно задать LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY?нужно объявить LLM_API_KEY, допустимо пустым}
     ports:
-      - "8080:8080"
+      - "${API_PORT:?нужно задать API_PORT}:8080"
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,18 +74,18 @@ services:
     build:
       context: ./frontend
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:?нужно задать FRONTEND_PORT}:80"
     depends_on:
       api:
         condition: service_started
 
-  # Локальная модель. Профиль llm включается явно:
+  # Профиль llm включается явно:
   #   docker compose --profile llm up -d
   ollama:
     image: ollama/ollama:latest
     profiles: ["llm"]
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:?нужно задать OLLAMA_PORT}:11434"
     volumes:
       - ollama:/root/.ollama
 

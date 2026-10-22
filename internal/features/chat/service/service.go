@@ -22,8 +22,13 @@ const resultRowsForModel = 30
 type Catalog interface {
 	List(ctx context.Context) ([]domain.Dataset, error)
 	Relations(ctx context.Context) ([]domain.Relation, error)
+
 	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
+}
+
+type Models interface {
+	Current(ctx context.Context) domain.LLM
 }
 
 type Executor interface {
@@ -39,7 +44,7 @@ type Service struct {
 	exec       Executor
 	sessions   SessionRepository
 	dashboards Dashboards
-	model      domain.LLM
+	models     Models
 	cfg        config.Query
 	log        *slog.Logger
 }
@@ -49,13 +54,13 @@ func New(
 	exec Executor,
 	sessions SessionRepository,
 	dashboards Dashboards,
-	model domain.LLM,
+	models Models,
 	cfg config.Query,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		catalog: catalog, exec: exec, sessions: sessions,
-		dashboards: dashboards, model: model, cfg: cfg, log: log,
+		dashboards: dashboards, models: models, cfg: cfg, log: log,
 	}
 }
 
@@ -123,6 +128,7 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 
 	plan, err := s.plan(ctx, schemaContext, turns, question)
 	if err != nil {
+
 		s.log.WarnContext(ctx, "планирование не выполнено", "error", err)
 		answer := s.overviewAnswer(ctx, datasets, relations, question)
 		answer.Warnings = append(answer.Warnings,
@@ -169,7 +175,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 	messages := formatHistory(turns)
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: question})
 
-	raw, err := s.model.Complete(ctx, domain.Completion{
+	raw, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System:   buildPlannerPrompt(schemaContext),
 		Messages: messages,
 		JSONOnly: true,
@@ -188,7 +194,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 		Role:    domain.RoleUser,
 		Content: "Верни ответ строго одним JSON-объектом по описанному формату, без текста вокруг.",
 	})
-	raw, err = s.model.Complete(ctx, domain.Completion{
+	raw, err = s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System:   buildPlannerPrompt(schemaContext),
 		Messages: messages,
 		JSONOnly: true,
@@ -222,7 +228,7 @@ func (s *Service) overviewAnswer(
 	}
 
 	facts := buildOverviewFacts(s.catalog.Schema(), datasets, relations)
-	text, err := s.model.Complete(ctx, domain.Completion{
+	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System: overviewSystemPrompt,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
@@ -420,7 +426,7 @@ func (s *Service) runQuery(
 }
 
 func (s *Service) repair(ctx context.Context, schemaContext, question, badSQL string, cause error) (string, error) {
-	raw, err := s.model.Complete(ctx, domain.Completion{
+	raw, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System: repairSystemPrompt,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
@@ -445,7 +451,7 @@ func (s *Service) repair(ctx context.Context, schemaContext, question, badSQL st
 func (s *Service) narrate(ctx context.Context, question, title string, rs *domain.ResultSet, warnings []string) string {
 	digest := formatResultForModel(rs, resultRowsForModel)
 
-	text, err := s.model.Complete(ctx, domain.Completion{
+	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System: narratorSystemPrompt,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
