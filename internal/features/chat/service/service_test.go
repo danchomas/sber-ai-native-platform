@@ -43,7 +43,7 @@ func newTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dash
 		t.Fatalf("создание сессии: %v", err)
 	}
 
-	svc := New(newFakeCatalog(), exec, sessions, dashboards, model, testQueryConfig(), testLogger())
+	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), testLogger())
 	return svc, session.ID, sessions
 }
 
@@ -270,7 +270,7 @@ func TestAskWithoutDatasets(t *testing.T) {
 	_ = sessions.CreateSession(context.Background(), session)
 
 	svc := New(catalog, &fakeExecutor{}, sessions, &fakeDashboards{},
-		newScriptedLLM(), testQueryConfig(), testLogger())
+		fixedModel{newScriptedLLM()}, testQueryConfig(), testLogger())
 
 	answer, err := svc.Ask(context.Background(), session.ID, "что в данных?")
 	if err != nil {

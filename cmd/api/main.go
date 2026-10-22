@@ -28,6 +28,9 @@ import (
 	datapg "github.com/heinousness/aibi/internal/features/datasets/repository/postgres"
 	datasvc "github.com/heinousness/aibi/internal/features/datasets/service"
 	datahttp "github.com/heinousness/aibi/internal/features/datasets/transport/http"
+	provpg "github.com/heinousness/aibi/internal/features/providers/repository/postgres"
+	provsvc "github.com/heinousness/aibi/internal/features/providers/service"
+	provhttp "github.com/heinousness/aibi/internal/features/providers/transport/http"
 	queryhttp "github.com/heinousness/aibi/internal/features/query/transport/http"
 	srcpg "github.com/heinousness/aibi/internal/features/sources/repository/postgres"
 	srcsvc "github.com/heinousness/aibi/internal/features/sources/service"
@@ -69,6 +72,7 @@ func run() error {
 	}
 
 	sourceRepo := srcpg.NewSourceRepository(pool)
+	providerRepo := provpg.NewProviderRepository(pool)
 	datasetRepo := datapg.NewDatasetRepository(pool)
 	relationRepo := datapg.NewRelationRepository(pool)
 	sessionRepo := chatpg.NewSessionRepository(pool)
@@ -79,22 +83,24 @@ func run() error {
 
 	rawRepo := corepg.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
 
-	model := newModel(ctx, cfg, log)
+	providers := provsvc.New(providerRepo, newModel(ctx, cfg, log), cfg.LLM, log)
+	providers.Restore(ctx)
 
 	datasets := datasvc.New(datasetRepo, relationRepo, rawRepo,
 		cfg.Postgres.RawSchema, cfg.Ingest, cfg.Query, log)
 	sources := srcsvc.New(sourceRepo, datasetRepo, rawRepo,
 		srcpg.NewIntrospector(registry), datasets, registry.Forget, log)
 	dashboards := dashsvc.New(dashboardRepo, datasets, rawRepo, cfg.Query, log)
-	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, model, cfg.Query, log)
+	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, providers, cfg.Query, log)
 
 	router := corehttp.NewRouter(corehttp.RouterOptions{
 		Config: cfg,
 		Logger: log,
 		Features: []corehttp.Registrar{
-			health.New(pgpool.NewHealthProbe(pool), model, version),
+			health.New(pgpool.NewHealthProbe(pool), providers, version),
 			datahttp.New(datasets, middleware.MaxBody(cfg.Ingest.MaxUploadBytes+1<<20)),
 			srchttp.New(sources),
+			provhttp.New(providers),
 			chathttp.New(chat),
 			dashhttp.New(dashboards),
 			queryhttp.New(datasets, rawRepo, cfg.Query),

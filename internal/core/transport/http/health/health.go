@@ -12,6 +12,10 @@ import (
 	"github.com/heinousness/aibi/internal/core/transport/http/response"
 )
 
+type Models interface {
+	Current(ctx context.Context) domain.LLM
+}
+
 type DBHealth interface {
 	Ping(ctx context.Context) error
 	PoolStats() map[string]int32
@@ -19,13 +23,13 @@ type DBHealth interface {
 
 type Handler struct {
 	db      DBHealth
-	model   domain.LLM
+	models  Models
 	version string
 	started time.Time
 }
 
-func New(db DBHealth, model domain.LLM, version string) *Handler {
-	return &Handler{db: db, model: model, version: version, started: time.Now()}
+func New(db DBHealth, models Models, version string) *Handler {
+	return &Handler{db: db, models: models, version: version, started: time.Now()}
 }
 
 type componentStatus struct {
@@ -62,13 +66,14 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 		resp.Pool = h.db.PoolStats()
 	}
 
-	if err := h.model.Ping(ctx); err != nil {
+	model := h.models.Current(ctx)
+	if err := model.Ping(ctx); err != nil {
 		resp.Components["llm"] = componentStatus{Status: "down", Detail: err.Error()}
 		if resp.Status == "ok" {
 			resp.Status = "degraded"
 		}
 	} else {
-		resp.Components["llm"] = componentStatus{Status: "ok", Detail: h.model.Model()}
+		resp.Components["llm"] = componentStatus{Status: "ok", Detail: model.Model()}
 	}
 
 	response.JSON(w, r, status, resp)
