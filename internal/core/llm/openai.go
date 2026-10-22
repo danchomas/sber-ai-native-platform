@@ -16,11 +16,14 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
+const maxListedInError = 8
+
 type Client struct {
 	http        *http.Client
 	baseURL     string
 	apiKey      string
 	model       string
+	headers     map[string]string
 	maxTokens   int
 	temperature float64
 	retries     int
@@ -35,6 +38,20 @@ func New(c config.LLM) *Client {
 		maxTokens:   c.MaxTokens,
 		temperature: c.Temperature,
 		retries:     max(c.Retries, 0),
+	}
+}
+
+func (c *Client) WithHeaders(h map[string]string) *Client {
+	c.headers = h
+	return c
+}
+
+func (c *Client) setHeaders(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
 	}
 }
 
@@ -136,9 +153,7 @@ func (c *Client) do(ctx context.Context, body []byte) (text string, retryable bo
 		return "", false, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	c.setHeaders(httpReq)
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
@@ -175,9 +190,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	}
+	c.setHeaders(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -206,15 +219,22 @@ func (c *Client) checkModelListed(body []byte) error {
 			apperr.ErrLLMUnavailable, c.model)
 	}
 
-	available := make([]string, 0, len(list.Data))
+	available := make([]string, 0, maxListedInError)
 	for _, m := range list.Data {
 		if m.ID == c.model {
 			return nil
 		}
-		available = append(available, m.ID)
+		if len(available) < maxListedInError {
+			available = append(available, m.ID)
+		}
+	}
+
+	hint := strings.Join(available, ", ")
+	if len(list.Data) > len(available) {
+		hint += fmt.Sprintf(" и ещё %d", len(list.Data)-len(available))
 	}
 	return fmt.Errorf("%w: модели %q нет на сервере, доступны: %s",
-		apperr.ErrLLMUnavailable, c.model, strings.Join(available, ", "))
+		apperr.ErrLLMUnavailable, c.model, hint)
 }
 
 func snippet(b []byte) string {
