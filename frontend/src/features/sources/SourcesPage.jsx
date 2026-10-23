@@ -27,7 +27,7 @@ export function SourcesPage({ active, onCatalogChanged }) {
     <section className={`view${active ? " active" : ""}`}>
       <div className="view-head">
         <h2>Источники</h2>
-        <p>Подключение к существующей базе — данные читаются на месте, без загрузки и преобразования</p>
+        <p>Подключите базу данных и работайте с ней в одном пространстве</p>
       </div>
 
       <div className="scroll">

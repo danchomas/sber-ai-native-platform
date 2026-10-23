@@ -47,13 +47,44 @@ func looksLikeIdentifier(names ...string) bool {
 	return false
 }
 
+// identifiesEnough отсеивает колонки, которые названы идентификатором,
+// но ничего не идентифицируют.
+//
+// Имени недостаточно: «Номер позиции» и «Номер попытки» — порядковые
+// числа с горсткой значений на сотни тысяч строк. Такие колонки дают
+// стопроцентное пересечение с любой другой последовательностью, и поиск
+// связей выдаёт ложные пути соединения, по которым агенту разрешено
+// строить JOIN. Текстовые коды под это правило не попадают: они
+// идентифицируют по своей природе.
+func identifiesEnough(c domain.Column, p *domain.ColumnProfile) bool {
+	if c.Type != domain.ColumnTypeInteger {
+		return true
+	}
+	if p == nil || p.RowCount == 0 {
+		return true
+	}
+	notNull := p.RowCount - p.NullCount
+	if notNull <= 0 {
+		return false
+	}
+	if p.DistinctCount >= minIntegerIdentifierValues {
+		return true
+	}
+	// Либо значений много, либо они почти не повторяются.
+	return float64(p.DistinctCount)/float64(notNull) > 0.5
+}
+
+// minIntegerIdentifierValues — ниже этого числа различных значений целое
+// поле считается разрезом, как бы оно ни называлось.
+const minIntegerIdentifierValues = 1000
+
 func inferRole(c domain.Column, p *domain.ColumnProfile) domain.SemanticRole {
 	if c.Type.IsTemporal() {
 		return domain.RoleTemporal
 	}
 
 	nameIsID := looksLikeIdentifier(c.Name, c.SourceName)
-	if nameIsID && c.Type != domain.ColumnTypeNumeric {
+	if nameIsID && c.Type != domain.ColumnTypeNumeric && identifiesEnough(c, p) {
 		return domain.RoleIdentifier
 	}
 

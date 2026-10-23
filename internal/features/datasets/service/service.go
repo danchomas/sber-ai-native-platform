@@ -215,7 +215,13 @@ func (s *Service) DiscoverRelations(ctx context.Context) error {
 			continue
 		}
 		for _, c := range d.Columns {
-			if c.Role == domain.RoleIdentifier || looksLikeIdentifier(c.Name, c.SourceName) {
+			// Роль — уже взвешенное суждение: она учитывает и название,
+			// и фактические данные. Возвращать сюда проверку по имени
+			// нельзя — она вернёт ровно те порядковые номера, которые
+			// роль отсеяла, и они дадут ложные пути соединения.
+			// Имя остаётся подстраховкой только для колонок без профиля.
+			if c.Role == domain.RoleIdentifier ||
+				(c.Role == "" && looksLikeIdentifier(c.Name, c.SourceName)) {
 				candidates = append(candidates, candidate{dataset: d, column: c})
 			}
 		}

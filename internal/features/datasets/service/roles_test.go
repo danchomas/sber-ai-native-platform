@@ -56,3 +56,35 @@ func TestInferRole(t *testing.T) {
 		})
 	}
 }
+
+func TestInferRoleRejectsLowCardinalityIntegerIdentifiers(t *testing.T) {
+	// «Номер позиции»: пять значений на полмиллиона строк. Называется
+	// идентификатором, но ничего не идентифицирует — и давал ложные
+	// связи со всякой другой последовательностью 1..N.
+	col := domain.Column{Name: "nomer_pozicii", SourceName: "Номер позиции", Type: domain.ColumnTypeInteger}
+	prof := &domain.ColumnProfile{RowCount: 500000, DistinctCount: 5}
+
+	if got := inferRole(col, prof); got == domain.RoleIdentifier {
+		t.Errorf("колонка с 5 значениями на 500000 строк не должна быть идентификатором, получено %q", got)
+	}
+}
+
+func TestInferRoleKeepsGenuineIntegerIdentifier(t *testing.T) {
+	col := domain.Column{Name: "kod_klienta", SourceName: "Код клиента", Type: domain.ColumnTypeInteger}
+	prof := &domain.ColumnProfile{RowCount: 500000, DistinctCount: 71839}
+
+	if got := inferRole(col, prof); got != domain.RoleIdentifier {
+		t.Errorf("колонка с 71839 значениями должна остаться идентификатором, получено %q", got)
+	}
+}
+
+func TestInferRoleKeepsTextIdentifierRegardlessOfCardinality(t *testing.T) {
+	// Текстовые коды идентифицируют по своей природе: правило про
+	// количество значений к ним не применяется.
+	col := domain.Column{Name: "kod_magazina", SourceName: "Код магазина", Type: domain.ColumnTypeText}
+	prof := &domain.ColumnProfile{RowCount: 500000, DistinctCount: 128}
+
+	if got := inferRole(col, prof); got != domain.RoleIdentifier {
+		t.Errorf("текстовый код должен остаться идентификатором, получено %q", got)
+	}
+}

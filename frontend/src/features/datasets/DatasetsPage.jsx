@@ -11,7 +11,7 @@ export function DatasetsPage({ active, theme, datasets }) {
     <section className={`view${active ? " active" : ""}`}>
       <div className="view-head">
         <h2>Данные</h2>
-        <p>CSV загружается как есть — разбор, типы и профиль считаются внутри платформы</p>
+        <p>Загрузите файлы — AI-аналитик поможет разобраться в цифрах</p>
       </div>
 
       <div className="scroll">

@@ -1,11 +1,9 @@
 /* Каталог данных. */
 
-/* Каталог данных. */
-
 .dropzone {
-  border: 1.5px dashed var(--border); border-radius: var(--radius);
-  padding: 26px; text-align: center; color: var(--text-secondary);
-  background: var(--surface-1);
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 35%, var(--border)); border-radius: var(--radius);
+  padding: 46px 24px; text-align: center; color: var(--text-secondary);
+  background: var(--glass);
   box-shadow: var(--shadow);
 }
 .dropzone.over {

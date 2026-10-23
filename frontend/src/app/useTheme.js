@@ -18,7 +18,7 @@ export function useTheme() {
   // Тёмная включается только по явному предпочтению системы или выбору.
   const [theme, setTheme] = useState(() => {
     const stored = readStored();
-    if (stored) return stored;
+    if (stored === "light" || stored === "dark") return stored;
     const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
     return prefersDark ? "dark" : "light";
   });

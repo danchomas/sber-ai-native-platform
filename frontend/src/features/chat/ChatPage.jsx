@@ -18,21 +18,21 @@ export function ChatPage({ active, theme, sessions, onOpenDashboard }) {
 
   useEffect(() => {
     const node = scroll.current;
-    if (node) node.scrollTop = node.scrollHeight;
+    if (node) node.scrollTop = messages.length || busy ? node.scrollHeight : 0;
   }, [messages, busy]);
 
   return (
-    <section className={`view${active ? " active" : ""}`}>
+    <section className={`view chat-view${active ? " active" : ""}${messages.length === 0 && !busy ? " is-empty" : ""}`} aria-label="Чат с аналитиком">
       <div className="view-head">
-        <h2>{sessions.active?.title || "Новый диалог"}</h2>
-        <p>Спросите о загруженных данных на обычном языке</p>
+        <div className="chat-heading"><h2>{sessions.active?.title || "Новый диалог"}</h2><p>Рабочее пространство</p></div>
+        <span className="assistant-badge"><span /> AI-аналитик</span>
       </div>
 
       <div className="scroll" ref={scroll}>
         <div className={`thread col${messages.length === 0 && !busy ? " thread-empty" : ""}`}>
-          {error ? <ErrorBanner error={error} /> : null}
+          {error || sessions.error ? <ErrorBanner error={error || sessions.error} /> : null}
 
-          {messages.length === 0 && !busy ? <Welcome onAsk={ask} /> : null}
+          {messages.length === 0 && !busy ? <Welcome onAsk={ask} disabled={!sessions.activeId} /> : null}
 
           {messages.map((m) =>
             m.role === "user" ? (
@@ -53,7 +53,7 @@ export function ChatPage({ active, theme, sessions, onOpenDashboard }) {
         </div>
       </div>
 
-      <Composer busy={busy} onAsk={ask} />
+      <Composer busy={busy} disabled={!sessions.activeId} onAsk={ask} />
     </section>
   );
 }

@@ -54,11 +54,12 @@ export function App() {
           setView("chat");
         }}
         onNewSession={() => {
-          sessions.create();
+          sessions.create().catch(() => {});
           setView("chat");
         }}
         health={health}
         onToggleTheme={toggle}
+        theme={theme}
       />
 
       <main className="main">

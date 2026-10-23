@@ -24,10 +24,15 @@ export function useSessions() {
   }, []);
 
   const create = useCallback(async () => {
-    const session = await api.createSession();
-    setActiveId(session.id);
-    await reload();
-    return session;
+    try {
+      const session = await api.createSession();
+      setActiveId(session.id);
+      await reload();
+      return session;
+    } catch (err) {
+      setError(err);
+      throw err;
+    }
   }, [reload]);
 
   // При первом открытии продолжаем последний диалог, а если их нет — заводим.

@@ -39,7 +39,7 @@ export class HttpClient {
 
     if (!resp.ok) {
       const e = payload?.error;
-      throw new ApiError(e?.message || `HTTP ${resp.status}`, e?.code, e?.field);
+      throw new ApiError(e?.message || (resp.status >= 500 ? "Сервер временно недоступен. Попробуйте ещё раз." : `Не удалось выполнить запрос (${resp.status}).`), e?.code, e?.field);
     }
     return payload;
   }

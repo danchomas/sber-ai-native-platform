@@ -1,165 +1,96 @@
-/* Каркас: боковая панель, навигация, рабочая область.
-
-   Панель «плавает» над подложкой скруглённой карточкой, а не примыкает
-   к краю: в образце все несущие элементы — отдельные поверхности на
-   цветном фоне, а не секции сплошного полотна. */
-
+/* Общая сетка приложения. */
 .sidebar {
-  width: 272px;
-  flex: 0 0 272px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 12px 0 12px 12px;
-  padding: 18px 14px;
-  background: var(--surface-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  width: 256px; flex: 0 0 256px; display: flex; flex-direction: column;
+  gap: 24px; margin: 16px 0 16px 16px; padding: 26px 16px 14px;
+  background: var(--sidebar-bg); border: 1px solid var(--border);
+  border-radius: 24px; backdrop-filter: blur(24px); box-shadow: var(--shadow);
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 6px; }
-
-/* Собственный знак платформы, не заимствованный: сквиркл с зелёным
-   градиентом — форма и цвет из того же языка. */
+.brand { display: flex; align-items: center; gap: 11px; padding: 0 10px; }
 .brand-mark {
-  width: 34px; height: 34px; border-radius: 11px;
-  background: var(--accent-gradient);
-  display: grid; place-items: center;
-  font-size: 14px; font-weight: 700; color: #fff;
-  letter-spacing: -0.02em;
+  width: 40px; height: 40px; flex: 0 0 40px; border-radius: 14px;
+  background: linear-gradient(140deg, #b7ed5a, #22ad75 60%, #34bcb1);
+  color: #103c2a; display: grid; place-items: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
 }
-.brand-title { font-size: 15px; font-weight: 700; letter-spacing: var(--tracking-display); }
-.brand-sub { font-size: 12px; color: var(--text-muted); }
-
-.nav { display: flex; flex-direction: column; gap: 2px; }
+.brand-title { font-size: 15px; font-weight: 700; letter-spacing: -.035em; }
+.brand-sub { margin-top: 2px; font-size: 11px; color: var(--text-muted); }
+.new-chat {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 46px; padding: 10px 14px; border: 0; border-radius: 14px;
+  background: var(--accent-gradient); color: var(--accent-contrast); font-size: 13px; font-weight: 600;
+  box-shadow: 0 4px 12px rgba(8,123,66,.12); transition: filter .18s;
+}
+.new-chat:hover { filter: brightness(1.08); }
+.nav { display: flex; flex-direction: column; gap: 5px; }
 .nav button {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border: 0; border-radius: var(--radius-control);
-  background: transparent; color: var(--text-secondary); text-align: left;
-  transition: background .15s, color .15s;
+  display: flex; align-items: center; gap: 12px; min-height: 46px;
+  padding: 11px 14px; border: 1px solid transparent; border-radius: 13px;
+  background: transparent; color: var(--text-secondary); text-align: left; font-size: 13px;
+  transition: background .18s, color .18s;
 }
 .nav button:hover { background: var(--accent-soft); color: var(--accent); }
-.nav button[aria-current="page"] {
-  background: var(--accent-gradient);
-  color: var(--accent-contrast);
-  font-weight: 600;
-}
-.nav button[aria-current="page"] .count { color: var(--accent-contrast); opacity: .85; }
+.nav button[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-color: color-mix(in srgb, var(--accent) 12%, transparent); }
 .nav-label { flex: 1; }
-.nav .count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-
-.side-section { display: flex; flex-direction: column; gap: 6px; min-height: 0; flex: 1; }
-.side-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 8px; font-size: 11px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--text-muted);
-}
-.side-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 2px; }
-.side-item {
-  border-radius: var(--radius-sm);
-  display: block; width: 100%; text-align: left; border: 0;
-  padding: 8px 10px; border-radius: var(--radius-sm);
-  background: transparent; color: var(--text-secondary);
-  font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.side-item:hover { background: var(--accent-soft); color: var(--text-primary); }
-.side-item.active {
-  background: var(--accent-soft); color: var(--text-primary);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-.side-item time { display: block; font-size: 11px; color: var(--text-muted); }
-
-.status { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
-  border-top: 1px solid var(--border); font-size: 12px; color: var(--text-muted); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: 0 0 8px; }
-.dot.ok { background: var(--good); }
-.dot.warn { background: var(--warning); }
-.dot.down { background: var(--critical); }
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nav .count { min-width: 20px; text-align: center; font-size: 11px; font-variant-numeric: tabular-nums; }
+.side-section { display: flex; flex-direction: column; gap: 12px; min-height: 0; flex: 1; border-top: 1px solid var(--border); padding-top: 20px; }
+.side-head { padding: 0 14px; color: var(--text-muted); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+.side-list { overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.side-item { display: block; width: 100%; text-align: left; border: 0; border-radius: 12px; padding: 11px 14px; background: transparent; color: var(--text-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-item:hover, .side-item.active { background: var(--accent-soft); color: var(--text-primary); }
+.side-item time { display: block; margin-top: 4px; font-size: 10px; color: var(--text-muted); }
+.side-empty { margin: 0; padding: 0 14px; font-size: 12px; line-height: 1.7; color: var(--text-muted); }
+.side-footer { display: flex; flex-direction: column; gap: 12px; }
+.theme-toggle { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: transparent; color: var(--text-secondary); font-size: 12px; min-height: 42px; }
+.theme-toggle:hover { background: var(--accent-soft); }
+.theme-toggle svg:last-child { margin-left: auto; }
+.status { display: flex; align-items: center; gap: 7px; padding: 0 10px; font-size: 10px; color: var(--text-muted); }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex: 0 0 6px; }
+.dot.ok { background: var(--good); } .dot.warn { background: var(--warning); } .dot.down { background: var(--critical); }
+.main { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .view { display: none; flex: 1; min-height: 0; flex-direction: column; }
 .view.active { display: flex; }
-.view-head {
-  display: flex; align-items: baseline; gap: 12px;
-  padding: 18px 28px 12px; border-bottom: 1px solid var(--border);
-}
-.view-head p { margin: 0; color: var(--text-secondary); font-size: 13px; }
-.scroll { flex: 1; overflow-y: auto; padding: 22px 28px 40px; }
-
-/* ── Ширина колонок ─────────────────────────────────────────────────
-   Строка длиннее ~90 символов читается плохо, поэтому содержимое
-   ограничено по ширине и центрировано, а не растянуто до края экрана.
-   Табличным разделам (данные, дашборды) предел шире — им нужна площадь. */
-
-/* Полоса шапки тянется во всю ширину ради разделителя, а её содержимое
-   выравнивается по той же колонке, что и всё остальное. Центрируем
-   отступами, а не обёрткой: разметку страниц это не затрагивает. */
-.view-head {
-  padding: 22px max(32px, calc((100% - var(--col-wide)) / 2)) 18px;
-}
-.view-head h2 { font-size: 26px; }
-
-.scroll { padding-inline: 32px; }
-
-.col {
-  max-width: var(--col);
-  margin-inline: auto;
-  width: 100%;
-}
-.col-wide { max-width: var(--col-wide); }
-
-/* ── Контрольные точки ──────────────────────────────────────────────
-   Ширины выбраны по содержимому, а не по моделям устройств:
-   1560 — помещается широкая колонка с полями;
-   1100 — панель начинает теснить рабочую область;
-    880 — панель больше не окупает своё место и уезжает наверх. */
-
-@media (min-width: 1560px) {
-  :root { --col: 960px; --col-wide: 1480px; }
-  .scroll { padding-inline: 40px; }
-  .view-head { padding-inline: max(40px, calc((100% - var(--col-wide)) / 2)); }
-}
-
+.view-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 96px; padding: 28px 40px 22px; border-bottom: 1px solid var(--border); }
+.view-head h2 { font-size: 23px; font-weight: 600; }
+.view-head p { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 40px 36px; scrollbar-width: thin; }
+.col { max-width: var(--col); margin-inline: auto; width: 100%; }
+.col-wide { max-width: var(--col-wide); margin-inline: auto; width: 100%; }
 @media (max-width: 1100px) {
-  .sidebar { width: 232px; flex-basis: 232px; }
-  .view-head, .scroll { padding-inline: 22px; }
+  .sidebar { width: 228px; flex-basis: 228px; margin-left: 12px; }
+  .view-head, .scroll { padding-inline: 26px; }
 }
-
 @media (max-width: 880px) {
-  /* Панель становится верхней полосой: навигация в строку, список
-     диалогов скрыт — на узком экране он занимает больше, чем даёт. */
   #root { flex-direction: column; }
-
-  .sidebar {
-    width: auto; flex: 0 0 auto;
-    margin: 10px 10px 0;
-    padding: 12px 14px;
-    flex-direction: row;
-    align-items: center;
-    gap: 12px;
-    overflow-x: auto;
-  }
-  /* Название платформы на узком экране съедает три строки — остаётся знак. */
-  .sidebar .brand { flex: 0 0 auto; }
-  .sidebar .brand > div { display: none; }
-  .nav { flex-direction: row; gap: 6px; }
-  .nav button { white-space: nowrap; padding: 8px 14px; }
-  .side-section { display: none; }
-  .status { margin-left: auto; border: 0; padding: 0; white-space: nowrap; }
-  .status span:not(.dot) { display: none; }
-
-  /* Заголовок и подпись встают друг под друга: рядом они обе переносятся. */
-  .view-head {
-    padding: 16px 16px 12px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
-  .view-head h2 { font-size: 21px; }
-  .scroll { padding-inline: 16px; }
+  .sidebar { width: auto; flex: 0 0 auto; margin: 10px 12px 0; padding: 10px; gap: 8px; border-radius: 18px; display: grid; grid-template-columns: 1fr auto auto; }
+  .brand { padding: 0 6px; }
+  .brand-mark { width: 32px; height: 32px; flex-basis: 32px; border-radius: 11px; }
+  .brand-sub { display: none; }
+  .new-chat { min-height: 38px; font-size: 12px; padding: 8px 12px; }
+  .nav { grid-row: 2; grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .nav button { justify-content: center; min-height: 42px; gap: 7px; padding: 8px; font-size: 12px; }
+  .nav-label { flex: none; } .nav .count { display: none; }
+  .side-section, .status { display: none; }
+  .side-footer { grid-column: 3; grid-row: 1; }
+  .theme-toggle { min-height: 38px; width: 38px; justify-content: center; padding: 8px; }
+  .theme-toggle span, .theme-toggle svg:last-child { display: none; }
+  .view-head { min-height: 76px; padding: 20px 22px 16px; }
+  .view-head h2 { font-size: 20px; }
+  .scroll { padding: 22px; }
 }
-
 @media (max-width: 560px) {
   .sidebar { margin: 8px 8px 0; }
-  .view-head, .scroll { padding-inline: 12px; }
-  .card { padding: 14px 16px; border-radius: var(--radius-sm); }
+  .brand-title { font-size: 13px; } .brand { gap: 8px; }
+  .new-chat { font-size: 11px; gap: 5px; padding-inline: 9px; }
+  .nav button { flex-direction: column; gap: 4px; padding: 8px 3px; font-size: 10px; }
+  .view-head { padding: 18px 18px 14px; flex-direction: column; align-items: flex-start; gap: 3px; }
+  .view-head p { font-size: 11px; }
+  .scroll { padding: 20px 16px; }
+  .card { padding: 18px; }
+  .ds-head { flex-wrap: wrap; } .ds-actions { margin-left: 0; }
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-grid > * { grid-column: 1 / -1 !important; }
+}
+
+@media (max-width: 360px) {
+  .new-chat { font-size: 0; gap: 0; width: 38px; padding: 8px; }
 }

@@ -13,7 +13,7 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
     <section className={`view${active ? " active" : ""}`}>
       <div className="view-head">
         <h2>Дашборды</h2>
-        <p>Панели, собранные агентом, — данные пересчитываются при каждом открытии</p>
+        <p>Ваши показатели и визуализации — всегда под рукой</p>
       </div>
 
       <div className="scroll">

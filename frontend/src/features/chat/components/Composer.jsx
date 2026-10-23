@@ -1,8 +1,9 @@
 import { useRef, useState } from "react";
+import { Icon } from "../../../shared/ui/Icon.jsx";
 
 // Composer: Enter отправляет, Shift+Enter переносит строку.
 // Поле растёт под текст — вопросы бывают длинными.
-export function Composer({ busy, onAsk }) {
+export function Composer({ busy, disabled, onAsk }) {
   const [value, setValue] = useState("");
   const area = useRef(null);
 
@@ -15,7 +16,7 @@ export function Composer({ busy, onAsk }) {
 
   const send = () => {
     const text = value.trim();
-    if (!text || busy) return;
+    if (!text || busy || disabled) return;
     setValue("");
     if (area.current) area.current.style.height = "auto";
     onAsk(text);
@@ -26,27 +27,30 @@ export function Composer({ busy, onAsk }) {
       <div className="composer-inner">
         <div className="composer-box">
           <textarea
+            aria-label="Вопрос к AI-аналитику"
+            aria-describedby="composer-hint"
+            disabled={disabled}
             ref={area}
             rows={1}
             value={value}
-            placeholder="Например: что есть в этих данных? Покажи динамику по месяцам."
+            placeholder="Что вы хотите узнать о своих данных?"
             onChange={(e) => {
               setValue(e.target.value);
               grow();
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 send();
               }
             }}
           />
-          <button className="send" onClick={send} disabled={busy}>
-            {busy ? "…" : "Спросить"}
+          <button className="send" onClick={send} disabled={busy || disabled || !value.trim()} aria-label={busy ? "Готовится ответ" : "Отправить вопрос"} title="Отправить вопрос">
+            {busy ? <span className="spinner" /> : <Icon name="send" size={21} />}
           </button>
         </div>
-        <p className="hint">
-          Enter — отправить, Shift+Enter — перенос строки. Контекст диалога учитывается.
+        <p className="hint" id="composer-hint">
+          <span>AI может ошибаться. Проверяйте важные выводы.</span><span>Enter ↵ <span className="keyboard-hint">· Shift+Enter — новая строка</span></span>
         </p>
       </div>
     </div>
