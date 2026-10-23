@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"unicode/utf8"
+
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
 )
@@ -72,5 +74,31 @@ func TestNewReaderHandlesRaggedRows(t *testing.T) {
 	}
 	if len(rows) != 3 {
 		t.Fatalf("прочитано %d строк", len(rows))
+	}
+}
+
+func TestSniffDialectKeepsUTF8WhenHeadCutsRune(t *testing.T) {
+	header := "Код позиции;Код заказа;Дата операции\n"
+	row := "ПР-ПЗ-0000001;ПР-ЗК-0000001;2024-10-01 02:27:58\n"
+
+	full := []byte(header + strings.Repeat(row, 4000))
+
+	cut := 0
+	for n := 1024; n < len(full); n++ {
+		if !utf8.Valid(full[:n]) {
+			cut = n
+			break
+		}
+	}
+	if cut == 0 {
+		t.Fatal("не удалось подобрать срез, рассекающий символ")
+	}
+
+	d := SniffDialect(full[:cut])
+	if d.Encoding != "utf-8" {
+		t.Errorf("срез по границе символа принят за %s, ожидался utf-8", d.Encoding)
+	}
+	if d.Delimiter != ';' {
+		t.Errorf("разделитель %q, ожидался ';'", d.Delimiter)
 	}
 }

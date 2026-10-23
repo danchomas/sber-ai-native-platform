@@ -108,6 +108,10 @@ logs: ## Логи API
 logs-front: ## Логи интерфейса
 	docker compose logs -f frontend
 
+.PHONY: datasets
+datasets: ## Загрузить наборы из ./datasets (можно указать: make datasets ONLY="01 09")
+	scripts/load-datasets.sh $(ONLY)
+
 .PHONY: psql
 psql: ## Консоль PostgreSQL стенда
 	docker compose exec postgres psql -U aibi -d aibi

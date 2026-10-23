@@ -29,6 +29,7 @@ func (d Dialect) String() string {
 func SniffDialect(head []byte) Dialect {
 	d := Dialect{Delimiter: ',', Encoding: "utf-8"}
 
+	head = trimPartialRune(head)
 	if !utf8.Valid(head) {
 		d.Encoding = "windows-1251"
 		if decoded, err := io.ReadAll(transform.NewReader(
@@ -48,6 +49,18 @@ func SniffDialect(head []byte) Dialect {
 		d.Delimiter = best
 	}
 	return d
+}
+
+func trimPartialRune(b []byte) []byte {
+	if len(b) == 0 || utf8.Valid(b) {
+		return b
+	}
+	for i := 1; i <= utf8.UTFMax && i <= len(b); i++ {
+		if utf8.Valid(b[:len(b)-i]) {
+			return b[:len(b)-i]
+		}
+	}
+	return b
 }
 
 func NewReader(r io.Reader, d Dialect) *csv.Reader {
