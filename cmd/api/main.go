@@ -30,6 +30,7 @@ import (
 	datapg "github.com/heinousness/aibi/internal/features/datasets/repository/postgres"
 	datasvc "github.com/heinousness/aibi/internal/features/datasets/service"
 	datahttp "github.com/heinousness/aibi/internal/features/datasets/transport/http"
+	mcphttp "github.com/heinousness/aibi/internal/features/mcp/transport/http"
 	provpg "github.com/heinousness/aibi/internal/features/providers/repository/postgres"
 	provsvc "github.com/heinousness/aibi/internal/features/providers/service"
 	provhttp "github.com/heinousness/aibi/internal/features/providers/transport/http"
@@ -117,6 +118,7 @@ func run() error {
 			chathttp.New(chat),
 			dashhttp.New(dashboards),
 			queryhttp.New(datasets, rawRepo, cfg.Query),
+			mcphttp.New(chat, version),
 		},
 	})
 

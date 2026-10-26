@@ -92,15 +92,7 @@ func (s *Service) runAgent(
 	}
 
 	tools := agentTools(s.agent.AllowRawSQL)
-	r := &agentRun{
-		s: s, sessionID: sessionID, question: question,
-		datasets: datasets, relations: relations, scopes: scopes,
-		catalog: analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()},
-		known:   make(map[string]bool, len(tools)),
-	}
-	for _, t := range tools {
-		r.known[t.Name] = true
-	}
+	r := s.newRun(sessionID, question, datasets, relations, scopes, tools)
 
 	messages := formatHistory(turns)
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: question})
@@ -145,6 +137,26 @@ func (s *Service) runAgent(
 	r.warnings = append(r.warnings,
 		"Анализ не уложился в отведённое число шагов, поэтому показан последний полученный результат.")
 	return r.finish(""), nil
+}
+
+func (s *Service) newRun(
+	sessionID uuid.UUID,
+	question string,
+	datasets []domain.Dataset,
+	relations []domain.Relation,
+	scopes []domain.Scope,
+	tools []domain.ToolSpec,
+) *agentRun {
+	r := &agentRun{
+		s: s, sessionID: sessionID, question: question,
+		datasets: datasets, relations: relations, scopes: scopes,
+		catalog: analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()},
+		known:   make(map[string]bool, len(tools)),
+	}
+	for _, t := range tools {
+		r.known[t.Name] = true
+	}
+	return r
 }
 
 func (r *agentRun) dispatch(ctx context.Context, call domain.ToolCall) string {
