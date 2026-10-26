@@ -14,7 +14,11 @@ import (
 const defaultPingTimeout = 10 * time.Second
 
 type PoolOptions struct {
-	DSN               string
+	DSN string
+	// User и Password заменяют учётные данные из DSN: так пул роли чтения
+	// подключается к той же базе другой ролью.
+	User              string
+	Password          string
 	MaxConns          int32
 	MinConns          int32
 	MaxConnLifetime   time.Duration
@@ -31,6 +35,10 @@ func NewPool(ctx context.Context, opts PoolOptions) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("разбор DSN: %w", err)
 	}
 
+	if opts.User != "" {
+		pgCfg.ConnConfig.User = opts.User
+		pgCfg.ConnConfig.Password = opts.Password
+	}
 	if opts.MaxConns > 0 {
 		pgCfg.MaxConns = opts.MaxConns
 	}

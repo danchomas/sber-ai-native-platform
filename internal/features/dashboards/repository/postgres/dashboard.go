@@ -48,10 +48,14 @@ func (r *DashboardRepository) Create(ctx context.Context, d *domain.Dashboard) e
 			if err != nil {
 				return fmt.Errorf("сериализация визуализации: %w", err)
 			}
+			var query any
+			if len(w.Query) > 0 {
+				query = []byte(w.Query)
+			}
 			batch.Queue(`
-				INSERT INTO dashboard_widgets (id, dashboard_id, position, title, question, sql, chart, width)
-				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-				w.ID, w.DashboardID, w.Position, w.Title, w.Question, w.SQL, chart, w.Width)
+				INSERT INTO dashboard_widgets (id, dashboard_id, position, title, question, sql, chart, width, query)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+				w.ID, w.DashboardID, w.Position, w.Title, w.Question, w.SQL, chart, w.Width, query)
 		}
 		if batch.Len() == 0 {
 			return nil
@@ -128,7 +132,7 @@ func (r *DashboardRepository) Delete(ctx context.Context, id uuid.UUID) error {
 
 func (r *DashboardRepository) listWidgets(ctx context.Context, dashboardID uuid.UUID) ([]domain.Widget, error) {
 	const q = `
-		SELECT id, dashboard_id, position, title, question, sql, chart, width
+		SELECT id, dashboard_id, position, title, question, sql, chart, width, query
 		  FROM dashboard_widgets WHERE dashboard_id = $1 ORDER BY position`
 	rows, err := r.pool.Query(ctx, q, dashboardID)
 	if err != nil {
@@ -141,10 +145,14 @@ func (r *DashboardRepository) listWidgets(ctx context.Context, dashboardID uuid.
 		var (
 			w     domain.Widget
 			chart []byte
+			query []byte
 		)
 		if err := rows.Scan(&w.ID, &w.DashboardID, &w.Position, &w.Title,
-			&w.Question, &w.SQL, &chart, &w.Width); err != nil {
+			&w.Question, &w.SQL, &chart, &w.Width, &query); err != nil {
 			return nil, corepg.MapError(err)
+		}
+		if len(query) > 0 {
+			w.Query = query
 		}
 		if len(chart) > 0 {
 			if err := json.Unmarshal(chart, &w.Chart); err != nil {

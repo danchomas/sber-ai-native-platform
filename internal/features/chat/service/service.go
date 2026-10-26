@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/llm"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
@@ -32,7 +34,7 @@ type Models interface {
 }
 
 type Executor interface {
-	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int, args ...any) (*domain.ResultSet, error)
 }
 
 type Dashboards interface {
@@ -46,7 +48,12 @@ type Service struct {
 	dashboards Dashboards
 	models     Models
 	cfg        config.Query
+	agent      config.Agent
 	log        *slog.Logger
+
+	// noTools помнит модели, которые отказали в function calling, чтобы
+	// не тратить на них лишний запрос перед каждым вопросом.
+	noTools sync.Map
 }
 
 func New(
@@ -56,11 +63,12 @@ func New(
 	dashboards Dashboards,
 	models Models,
 	cfg config.Query,
+	agent config.Agent,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		catalog: catalog, exec: exec, sessions: sessions,
-		dashboards: dashboards, models: models, cfg: cfg, log: log,
+		dashboards: dashboards, models: models, cfg: cfg, agent: agent, log: log,
 	}
 }
 
@@ -119,13 +127,32 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 	if err != nil {
 		s.log.WarnContext(ctx, "связи каталога недоступны", "error", err)
 	}
-	schemaContext := buildSchemaContext(s.catalog.Schema(), datasets, relations)
-
 	turns, err := s.sessions.LastTurns(ctx, sessionID, s.cfg.HistoryDepth)
 	if err != nil {
 		s.log.WarnContext(ctx, "история диалога недоступна", "error", err)
 	}
 
+	model := s.models.Current(ctx)
+	if caller, ok := model.(ToolCaller); ok {
+		if _, unsupported := s.noTools.Load(model.Model()); !unsupported {
+			answer, err := s.runAgent(ctx, caller, sessionID, question, datasets, relations, turns)
+			if err == nil {
+				return answer
+			}
+			if !errors.Is(err, llm.ErrToolsUnsupported) {
+				s.log.WarnContext(ctx, "цикл агента не запущен", "error", err)
+				answer := s.overviewAnswer(ctx, datasets, relations, question)
+				answer.Warnings = append(answer.Warnings,
+					"Языковая модель недоступна, поэтому показано описание данных по профилю каталога.")
+				return answer
+			}
+			s.noTools.Store(model.Model(), struct{}{})
+			s.log.WarnContext(ctx, "модель не поддерживает инструменты, агент отвечает по плану в JSON",
+				"model", model.Model())
+		}
+	}
+
+	schemaContext := buildSchemaContext(s.catalog.Schema(), datasets, relations)
 	plan, err := s.plan(ctx, schemaContext, turns, question)
 	if err != nil {
 
@@ -499,6 +526,7 @@ func humanReason(err error) string {
 		msg = strings.TrimSpace(msg[i+len("ERROR:"):])
 	}
 	msg = strings.TrimPrefix(msg, apperr.ErrUnsafeQuery.Error()+": ")
+	msg = strings.TrimPrefix(msg, apperr.ErrValidation.Error()+": ")
 	if len(msg) > 300 {
 		msg = msg[:300] + "…"
 	}

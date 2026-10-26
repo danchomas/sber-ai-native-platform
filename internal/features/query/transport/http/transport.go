@@ -84,7 +84,7 @@ type Catalog interface {
 }
 
 type Executor interface {
-	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int, args ...any) (*domain.ResultSet, error)
 }
 
 func (h *Handler) Register(r chi.Router) {

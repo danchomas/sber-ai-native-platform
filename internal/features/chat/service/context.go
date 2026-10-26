@@ -77,6 +77,42 @@ func buildSchemaContext(schema string, datasets []domain.Dataset, relations []do
 	return sb.String()
 }
 
+// buildToolContext — каталог для агента с инструментами: датасеты по именам,
+// без схем и таблиц, потому что SQL модель не пишет.
+func buildToolContext(datasets []domain.Dataset, relations []domain.Relation) string {
+	var sb strings.Builder
+	sources := map[string]struct{}{}
+	for _, d := range datasets {
+		if !d.Ready() {
+			continue
+		}
+		sources[d.SourceName] = struct{}{}
+		origin := "загружен из файла " + d.SourceFile
+		if d.Attached() {
+			origin = "подключённая база «" + d.SourceName + "»"
+		}
+		fmt.Fprintf(&sb, "\nДАТАСЕТ «%s» — строк: %d, %s\n", d.Name, d.RowCount, origin)
+		for _, c := range d.Columns {
+			sb.WriteString(describeColumn(c))
+		}
+	}
+	if sb.Len() == 0 {
+		return "Данные не загружены."
+	}
+
+	if len(sources) > 1 {
+		sb.WriteString("\nДатасеты разных источников лежат в разных базах, соединить их нельзя.\n")
+	}
+	if len(relations) > 0 {
+		sb.WriteString("\nСВЯЗИ (выведены по пересечению значений, их можно использовать в join):\n")
+		for _, r := range relations {
+			fmt.Fprintf(&sb, "- «%s».%s → «%s».%s: пересечение %.0f%%, тип %s\n",
+				r.LeftDataset, r.LeftColumn, r.RightDataset, r.RightColumn, r.Overlap*100, r.Cardinality)
+		}
+	}
+	return sb.String()
+}
+
 func describeColumn(c domain.Column) string {
 	var sb strings.Builder
 
@@ -141,7 +177,10 @@ func formatHistory(turns []domain.Turn) []domain.ChatMessage {
 		if t.Answer != "" {
 			sb.WriteString(t.Answer)
 		}
-		if t.SQL != "" {
+		switch {
+		case len(t.Query) > 0:
+			fmt.Fprintf(&sb, "\n[параметры запроса: %s]", compactSQL(string(t.Query)))
+		case t.SQL != "":
 			fmt.Fprintf(&sb, "\n[выполненный SQL: %s]", compactSQL(t.SQL))
 		}
 		if t.Chart != nil && t.Chart.Type != "" {

@@ -18,6 +18,7 @@ type Config struct {
 	LLM      LLM
 	Ingest   Ingest
 	Query    Query
+	Agent    Agent
 }
 
 type App struct {
@@ -37,8 +38,11 @@ type HTTP struct {
 }
 
 type Postgres struct {
-	DSN               string
-	RawSchema         string
+	DSN       string
+	RawSchema string
+	// ReaderRole — роль, под которой выполняются аналитические запросы.
+	// Пустое значение отключает её, и запросы идут от владельца базы.
+	ReaderRole        string
 	MaxConns          int32
 	MinConns          int32
 	MaxConnLifetime   time.Duration
@@ -74,6 +78,15 @@ type Query struct {
 	HistoryDepth int
 }
 
+// Agent — цикл агента с инструментами.
+type Agent struct {
+	// MaxSteps — сколько раз модель может обратиться к инструментам за один вопрос.
+	MaxSteps int
+	// AllowRawSQL открывает модели инструмент run_sql. По умолчанию выключен:
+	// модель работает только типизированными инструментами и SQL не пишет.
+	AllowRawSQL bool
+}
+
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
@@ -97,6 +110,7 @@ func Load() (*Config, error) {
 		Postgres: Postgres{
 			DSN:               str("DATABASE_URL", "postgres://aibi:aibi@localhost:5432/aibi?sslmode=disable"),
 			RawSchema:         str("RAW_SCHEMA", "raw"),
+			ReaderRole:        strings.TrimSpace(os.Getenv("PG_READER_ROLE")),
 			MaxConns:          int32(integer("PG_MAX_CONNS", 16)),
 			MinConns:          int32(integer("PG_MIN_CONNS", 2)),
 			MaxConnLifetime:   duration("PG_MAX_CONN_LIFETIME", time.Hour),
@@ -128,6 +142,10 @@ func Load() (*Config, error) {
 			MaxRepairs:   integer("QUERY_MAX_REPAIRS", 2),
 			HistoryDepth: integer("QUERY_HISTORY_DEPTH", 12),
 		},
+		Agent: Agent{
+			MaxSteps:    integer("AGENT_MAX_STEPS", 10),
+			AllowRawSQL: boolean("AGENT_ALLOW_RAW_SQL", false),
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -150,6 +168,9 @@ func (c *Config) validate() error {
 	if !isIdent(c.Postgres.RawSchema) {
 		errs = append(errs, fmt.Errorf("RAW_SCHEMA %q не является корректным идентификатором", c.Postgres.RawSchema))
 	}
+	if c.Postgres.ReaderRole != "" && !isIdent(c.Postgres.ReaderRole) {
+		errs = append(errs, fmt.Errorf("PG_READER_ROLE %q не является корректным идентификатором", c.Postgres.ReaderRole))
+	}
 	if c.Postgres.MaxConns < 1 {
 		errs = append(errs, errors.New("PG_MAX_CONNS должен быть >= 1"))
 	}
@@ -158,6 +179,9 @@ func (c *Config) validate() error {
 	}
 	if c.Query.MaxRows < 1 {
 		errs = append(errs, errors.New("QUERY_MAX_ROWS должен быть >= 1"))
+	}
+	if c.Agent.MaxSteps < 1 || c.Agent.MaxSteps > 30 {
+		errs = append(errs, errors.New("AGENT_MAX_STEPS должен быть в диапазоне [1, 30]"))
 	}
 	if c.LLM.Enabled && c.LLM.BaseURL == "" {
 		errs = append(errs, errors.New("LLM_BASE_URL обязателен при LLM_ENABLED=true"))

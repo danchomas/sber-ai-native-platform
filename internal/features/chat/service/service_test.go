@@ -23,6 +23,10 @@ func testQueryConfig() config.Query {
 	return config.Query{MaxRows: 1000, PreviewRows: 20, MaxRepairs: 2, HistoryDepth: 8}
 }
 
+func testAgentConfig() config.Agent {
+	return config.Agent{MaxSteps: 6}
+}
+
 func sampleResult() *domain.ResultSet {
 	return &domain.ResultSet{
 		Columns: []domain.ResultColumn{
@@ -43,7 +47,7 @@ func newTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dash
 		t.Fatalf("создание сессии: %v", err)
 	}
 
-	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), testLogger())
+	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), testAgentConfig(), testLogger())
 	return svc, session.ID, sessions
 }
 
@@ -271,7 +275,7 @@ func TestAskWithoutDatasets(t *testing.T) {
 	_ = sessions.CreateSession(context.Background(), session)
 
 	svc := New(catalog, &fakeExecutor{}, sessions, &fakeDashboards{},
-		fixedModel{newScriptedLLM()}, testQueryConfig(), testLogger())
+		fixedModel{newScriptedLLM()}, testQueryConfig(), testAgentConfig(), testLogger())
 
 	answer, err := svc.Ask(context.Background(), session.ID, "что в данных?")
 	if err != nil {

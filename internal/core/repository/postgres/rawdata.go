@@ -20,12 +20,28 @@ const maxDistinctScan = 100_000
 
 type RawDataRepository struct {
 	registry     *pgpool.Registry
+	reader       *pgxpool.Pool
 	schema       string
 	queryTimeout time.Duration
 }
 
 func NewRawDataRepository(registry *pgpool.Registry, schema string, queryTimeout time.Duration) *RawDataRepository {
 	return &RawDataRepository{registry: registry, schema: schema, queryTimeout: queryTimeout}
+}
+
+// WithReader направляет аналитические запросы к собственной базе в пул
+// роли только для чтения (см. EnsureReaderRole). Загрузка, профилирование
+// и удаление таблиц по-прежнему идут от владельца.
+func (r *RawDataRepository) WithReader(pool *pgxpool.Pool) *RawDataRepository {
+	r.reader = pool
+	return r
+}
+
+func (r *RawDataRepository) queryPool(ctx context.Context, target domain.QueryTarget) (*pgxpool.Pool, error) {
+	if target.SourceID == nil && r.reader != nil {
+		return r.reader, nil
+	}
+	return r.registry.For(ctx, target.SourceID)
 }
 
 var _ domain.RawDataRepository = (*RawDataRepository)(nil)
@@ -298,13 +314,13 @@ func (r *RawDataRepository) ValueOverlap(ctx context.Context, left, right domain
 	return float64(matched) / float64(total), matched, nil
 }
 
-func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error) {
+func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int, args ...any) (*domain.ResultSet, error) {
 	if maxRows <= 0 {
 		maxRows = 1000
 	}
 	started := time.Now()
 
-	pool, err := r.registry.For(ctx, target.SourceID)
+	pool, err := r.queryPool(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +347,7 @@ func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget
 		}
 	}
 
-	rows, err := tx.Query(ctx, sql)
+	rows, err := tx.Query(ctx, sql, args...)
 	if err != nil {
 		return nil, QueryError(err)
 	}
@@ -363,7 +379,7 @@ func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget
 }
 
 func (r *RawDataRepository) ExplainCost(ctx context.Context, target domain.QueryTarget, sql string) (float64, error) {
-	pool, err := r.registry.For(ctx, target.SourceID)
+	pool, err := r.queryPool(ctx, target)
 	if err != nil {
 		return 0, err
 	}

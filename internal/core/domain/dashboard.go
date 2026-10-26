@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,14 +18,15 @@ type Dashboard struct {
 }
 
 type Widget struct {
-	ID          uuid.UUID  `json:"id"`
-	DashboardID uuid.UUID  `json:"dashboard_id"`
-	Position    int        `json:"position"`
-	Title       string     `json:"title"`
-	Question    string     `json:"question,omitempty"`
-	SQL         string     `json:"sql"`
-	Chart       ChartSpec  `json:"chart"`
-	Width       int        `json:"width"`
-	Result      *ResultSet `json:"result,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	ID          uuid.UUID       `json:"id"`
+	DashboardID uuid.UUID       `json:"dashboard_id"`
+	Position    int             `json:"position"`
+	Title       string          `json:"title"`
+	Question    string          `json:"question,omitempty"`
+	SQL         string          `json:"sql"`
+	Query       json.RawMessage `json:"query,omitempty"`
+	Chart       ChartSpec       `json:"chart"`
+	Width       int             `json:"width"`
+	Result      *ResultSet      `json:"result,omitempty"`
+	Error       string          `json:"error,omitempty"`
 }

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -9,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -18,12 +21,14 @@ import (
 const widgetConcurrency = 4
 
 type Catalog interface {
+	List(ctx context.Context) ([]domain.Dataset, error)
+	Relations(ctx context.Context) ([]domain.Relation, error)
 	Scopes(ctx context.Context) ([]domain.Scope, error)
 	Schema() string
 }
 
 type Executor interface {
-	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int, args ...any) (*domain.ResultSet, error)
 }
 
 type Service struct {
@@ -88,24 +93,32 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 	if err != nil {
 		return nil, err
 	}
+	catalog, err := s.analyticsCatalog(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	var mu sync.Mutex
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(widgetConcurrency)
 
 	for i := range d.Widgets {
-		i := i
 		g.Go(func() error {
-
-			scope, checked, err := sqlguard.ResolveScope(
-				d.Widgets[i].SQL, scopes, s.catalog.Schema(), s.cfg.MaxRows)
+			sql, args, err := widgetQuery(d.Widgets[i], catalog, s.cfg.MaxRows)
 			if err != nil {
 				mu.Lock()
 				d.Widgets[i].Error = "запрос больше недоступен: " + err.Error()
 				mu.Unlock()
 				return nil
 			}
-			result, err := s.exec.Query(gctx, scope.Target, checked.SQL, s.cfg.MaxRows)
+			scope, checked, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows)
+			if err != nil {
+				mu.Lock()
+				d.Widgets[i].Error = "запрос больше недоступен: " + err.Error()
+				mu.Unlock()
+				return nil
+			}
+			result, err := s.exec.Query(gctx, scope.Target, checked.SQL, s.cfg.MaxRows, args...)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -120,6 +133,36 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 		return nil, err
 	}
 	return d, nil
+}
+
+func (s *Service) analyticsCatalog(ctx context.Context) (analytics.Catalog, error) {
+	datasets, err := s.catalog.List(ctx)
+	if err != nil {
+		return analytics.Catalog{}, err
+	}
+	relations, err := s.catalog.Relations(ctx)
+	if err != nil {
+		s.log.WarnContext(ctx, "связи каталога недоступны", "error", err)
+	}
+	return analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()}, nil
+}
+
+// widgetQuery пересобирает SQL виджета из сохранённых параметров: так
+// виджет проходит текущую проверку каталога и переживает переименование
+// таблиц. Виджеты, у которых есть только SQL, выполняются как раньше.
+func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int) (string, []any, error) {
+	if len(w.Query) == 0 {
+		return w.SQL, nil, nil
+	}
+	var q analytics.Query
+	if err := json.Unmarshal(w.Query, &q); err != nil {
+		return "", nil, fmt.Errorf("параметры виджета повреждены: %w", err)
+	}
+	compiled, err := analytics.Compile(q, catalog, maxRows)
+	if err != nil {
+		return "", nil, err
+	}
+	return compiled.SQL, compiled.Args, nil
 }
 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {

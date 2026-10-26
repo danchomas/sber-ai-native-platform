@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,21 +44,35 @@ type Message struct {
 }
 
 type Answer struct {
-	Intent      AnswerIntent `json:"intent"`
-	Text        string       `json:"text"`
-	SQL         string       `json:"sql,omitempty"`
-	Result      *ResultSet   `json:"result,omitempty"`
-	Chart       *ChartSpec   `json:"chart,omitempty"`
-	DashboardID *uuid.UUID   `json:"dashboard_id,omitempty"`
-	Datasets    []string     `json:"datasets,omitempty"`
-	Followups   []string     `json:"followups,omitempty"`
-	Warnings    []string     `json:"warnings,omitempty"`
-	Elapsed     int64        `json:"elapsed_ms"`
+	Intent      AnswerIntent    `json:"intent"`
+	Text        string          `json:"text"`
+	SQL         string          `json:"sql,omitempty"`
+	Query       json.RawMessage `json:"query,omitempty"`
+	Result      *ResultSet      `json:"result,omitempty"`
+	Chart       *ChartSpec      `json:"chart,omitempty"`
+	DashboardID *uuid.UUID      `json:"dashboard_id,omitempty"`
+	Datasets    []string        `json:"datasets,omitempty"`
+	Followups   []string        `json:"followups,omitempty"`
+	Warnings    []string        `json:"warnings,omitempty"`
+	Steps       []AgentStep     `json:"steps,omitempty"`
+	Elapsed     int64           `json:"elapsed_ms"`
+}
+
+// AgentStep — один вызов инструмента в цикле агента. Показывается
+// пользователю как ход работы, поэтому Title — человеческая фраза.
+type AgentStep struct {
+	Tool    string `json:"tool"`
+	Title   string `json:"title"`
+	OK      bool   `json:"ok"`
+	Detail  string `json:"detail,omitempty"`
+	Rows    int    `json:"rows,omitempty"`
+	Elapsed int64  `json:"elapsed_ms"`
 }
 
 type Turn struct {
 	Question string
 	Answer   string
 	SQL      string
+	Query    json.RawMessage
 	Chart    *ChartSpec
 }

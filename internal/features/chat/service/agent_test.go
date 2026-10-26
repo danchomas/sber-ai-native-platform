@@ -1,0 +1,341 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/heinousness/aibi/internal/core/apperr"
+	"github.com/heinousness/aibi/internal/core/config"
+	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/llm"
+)
+
+func TestAgentAnswersThroughTools(t *testing.T) {
+	model := newToolLLM(
+		calls(call("c1", toolAggregate,
+			`{"dataset":"orders","group_by":["Статус"],"filters":[{"column":"amount","op":"gt","value":100}],"title":"Заказы по статусам"}`)),
+		calls(call("c2", toolAnswer,
+			`{"text":"Больше всего оплаченных заказов — 700.","result_id":"r1","chart":{"type":"bar"},"followups":["А по месяцам?"]}`)),
+	)
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Сколько крупных заказов в каждом статусе?")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+
+	if answer.Intent != domain.IntentQuery {
+		t.Fatalf("сценарий %s: %+v", answer.Intent, answer)
+	}
+	if answer.Text != "Больше всего оплаченных заказов — 700." {
+		t.Fatalf("текст ответа: %q", answer.Text)
+	}
+	if answer.Chart == nil || answer.Chart.Type != domain.ChartTypeBar {
+		t.Fatalf("визуализация: %+v", answer.Chart)
+	}
+	if len(answer.Followups) != 1 || len(answer.Datasets) != 1 || answer.Datasets[0] != "orders" {
+		t.Fatalf("метаданные ответа: %+v", answer)
+	}
+	if len(answer.Query) == 0 || !strings.Contains(string(answer.Query), `"dataset":"orders"`) {
+		t.Fatalf("в ответе нет параметров запроса для продолжения диалога: %s", answer.Query)
+	}
+	if len(answer.Steps) != 1 || answer.Steps[0].Tool != toolAggregate || !answer.Steps[0].OK {
+		t.Fatalf("ход работы: %+v", answer.Steps)
+	}
+
+	if len(exec.queries) != 1 {
+		t.Fatalf("ожидался один запрос к базе, выполнено %d", len(exec.queries))
+	}
+	if !strings.Contains(exec.queries[0], `t0."amount" > $1`) {
+		t.Fatalf("фильтр должен уйти параметром:\n%s", exec.queries[0])
+	}
+	if len(exec.args[0]) != 1 || exec.args[0][0] != 100.0 {
+		t.Fatalf("параметры запроса: %#v", exec.args[0])
+	}
+}
+
+func TestAgentSendsCatalogAndToolsToModel(t *testing.T) {
+	model := newToolLLM(domain.Reply{Content: "Здравствуйте! Спросите о данных."})
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Привет")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Intent != domain.IntentSmalltalk || answer.Text != "Здравствуйте! Спросите о данных." {
+		t.Fatalf("ответ без инструментов: %+v", answer)
+	}
+
+	req := model.requests[0]
+	if !strings.Contains(req.System, "ДАТАСЕТ «orders»") || strings.Contains(req.System, "raw.ds_orders") {
+		t.Fatal("в промпт агента должен попасть каталог по именам датасетов, без схем и таблиц")
+	}
+	names := map[string]bool{}
+	for _, tool := range req.Tools {
+		names[tool.Name] = true
+		if !json.Valid(tool.Parameters) {
+			t.Errorf("схема инструмента %s — невалидный JSON", tool.Name)
+		}
+	}
+	for _, want := range []string{toolDescribe, toolAggregate, toolRows, toolDuplicates, toolDashboard, toolAnswer, toolClarify, toolDecline} {
+		if !names[want] {
+			t.Errorf("модели не передан инструмент %s", want)
+		}
+	}
+	if names[toolSQL] {
+		t.Fatal("run_sql не должен быть доступен модели по умолчанию")
+	}
+}
+
+func TestAgentRepairsInvalidToolCall(t *testing.T) {
+	model := newToolLLM(
+		calls(call("c1", toolAggregate, `{"dataset":"orders","group_by":["region"]}`)),
+		calls(call("c2", toolAggregate, `{"dataset":"orders","group_by":"status"}`)),
+		calls(call("c3", toolAnswer, `{"text":"Готово."}`)),
+	)
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Заказы по регионам")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+
+	if len(exec.queries) != 1 {
+		t.Fatalf("ошибочный вызов не должен доходить до базы: выполнено %d запросов", len(exec.queries))
+	}
+	tools := model.toolMessages()
+	if len(tools) != 2 || !strings.Contains(tools[0].Content, "region") || !strings.Contains(tools[0].Content, "нет в датасете") {
+		t.Fatalf("модель должна увидеть причину ошибки: %+v", tools)
+	}
+	if len(answer.Steps) != 2 || answer.Steps[0].OK || !answer.Steps[1].OK {
+		t.Fatalf("ход работы должен показать ошибку и исправление: %+v", answer.Steps)
+	}
+	if answer.Intent != domain.IntentQuery || answer.Result == nil {
+		t.Fatalf("после исправления ожидался результат: %+v", answer)
+	}
+}
+
+func TestAgentBuildsDashboard(t *testing.T) {
+	model := newToolLLM(
+		calls(
+			call("c1", toolAggregate, `{"dataset":"orders","metrics":[{"fn":"count"}],"title":"Всего заказов"}`),
+			call("c2", toolAggregate, `{"dataset":"orders","time":{"column":"created_at","grain":"quarter"},"metrics":[{"fn":"sum","column":"amount"}],"title":"Выручка по кварталам"}`),
+		),
+		calls(call("c3", toolDashboard,
+			`{"title":"Квартальная статистика","widgets":[{"result_id":"r1","chart":{"type":"kpi"}},{"result_id":"r2","title":"Выручка","chart":{"type":"line"}},{"result_id":"r9"}]}`)),
+		calls(call("c4", toolAnswer, `{"text":"Собрал панель с квартальной статистикой."}`)),
+	)
+	dashboards := &fakeDashboards{}
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, dashboards)
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Создай дашборд с ежеквартальной статистикой")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+
+	if answer.Intent != domain.IntentDashboard || answer.DashboardID == nil {
+		t.Fatalf("ожидался дашборд: %+v", answer)
+	}
+	if len(dashboards.created) != 1 {
+		t.Fatalf("сохранено дашбордов: %d", len(dashboards.created))
+	}
+	widgets := dashboards.created[0].Widgets
+	if len(widgets) != 2 {
+		t.Fatalf("виджетов %d, ожидалось 2 (r9 не существует)", len(widgets))
+	}
+	if widgets[1].Title != "Выручка" || len(widgets[1].Query) == 0 {
+		t.Fatalf("виджет должен хранить параметры запроса для обновления: %+v", widgets[1])
+	}
+	if tools := model.toolMessages(); len(tools) != 3 || !strings.Contains(tools[2].Content, "skipped") {
+		t.Fatal("модель должна узнать о пропущенном виджете")
+	}
+}
+
+func TestAgentClarifiesAndDeclines(t *testing.T) {
+	cases := []struct {
+		name   string
+		reply  domain.Reply
+		intent domain.AnswerIntent
+		text   string
+		follow int
+	}{
+		{
+			name:   "уточнение",
+			reply:  calls(call("c1", toolClarify, `{"message":"Какой период вас интересует?","options":["2023","2024"]}`)),
+			intent: domain.IntentClarify, text: "Какой период вас интересует?", follow: 2,
+		},
+		{
+			name:   "отказ",
+			reply:  calls(call("c1", toolDecline, `{"message":"В данных нет курса валют.","suggestions":["Сумма заказов по месяцам"]}`)),
+			intent: domain.IntentReject, text: "В данных нет курса валют.", follow: 1,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, sessionID, _ := newTestAgent(t, newToolLLM(tc.reply), &fakeExecutor{}, &fakeDashboards{})
+			answer, err := svc.Ask(context.Background(), sessionID, "вопрос")
+			if err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+			if answer.Intent != tc.intent || answer.Text != tc.text || len(answer.Followups) != tc.follow {
+				t.Fatalf("ответ: %+v", answer)
+			}
+		})
+	}
+}
+
+func TestAgentDescribesData(t *testing.T) {
+	model := newToolLLM(
+		calls(call("c1", toolDescribe, `{"dataset":"orders"}`)),
+		calls(call("c2", toolAnswer, `{"text":"Это заказы за полтора года."}`)),
+	)
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Что передо мной?")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Intent != domain.IntentOverview || answer.Result == nil {
+		t.Fatalf("ожидалось описание данных: %+v", answer)
+	}
+	described := model.toolMessages()[0].Content
+	for _, want := range []string{`"title":"Статус"`, `"top_values"`, `"min":"2023-01-01"`} {
+		if !strings.Contains(described, want) {
+			t.Errorf("в описании датасета нет %s: %s", want, described)
+		}
+	}
+}
+
+func TestAgentRefusesDisabledAndUnknownTools(t *testing.T) {
+	model := newToolLLM(
+		calls(
+			call("c1", toolSQL, `{"sql":"SELECT * FROM raw.ds_orders"}`),
+			call("c2", "drop_table", `{"table":"ds_orders"}`),
+		),
+		calls(call("c3", toolDecline, `{"message":"Не могу."}`)),
+	)
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	if _, err := svc.Ask(context.Background(), sessionID, "выгрузи всё"); err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if len(exec.queries) != 0 {
+		t.Fatalf("к базе не должно было уйти ни одного запроса: %v", exec.queries)
+	}
+	tools := model.toolMessages()
+	if len(tools) != 2 || !strings.Contains(tools[0].Content, "отключён") || !strings.Contains(tools[1].Content, "нет") {
+		t.Fatalf("модель должна получить отказ по обоим вызовам: %+v", tools)
+	}
+}
+
+func TestAgentRawSQLStillGuarded(t *testing.T) {
+	model := newToolLLM(
+		calls(call("c1", toolSQL, `{"sql":"SELECT pg_read_file('/etc/passwd')"}`)),
+		calls(call("c2", toolSQL, `{"sql":"SELECT status, count(*) FROM raw.ds_orders GROUP BY 1"}`)),
+		calls(call("c3", toolAnswer, `{"text":"Готово."}`)),
+	)
+	exec := &fakeExecutor{result: sampleResult()}
+
+	sessions := newMemorySessions()
+	session := &domain.Session{ID: [16]byte{1}}
+	_ = sessions.CreateSession(context.Background(), session)
+	svc := New(newFakeCatalog(), exec, sessions, &fakeDashboards{}, fixedModel{model},
+		testQueryConfig(), config.Agent{MaxSteps: 6, AllowRawSQL: true}, testLogger())
+
+	answer, err := svc.Ask(context.Background(), session.ID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if len(exec.queries) != 1 || strings.Contains(exec.queries[0], "pg_read_file") {
+		t.Fatalf("опасный запрос не должен доходить до базы: %v", exec.queries)
+	}
+	if answer.Intent != domain.IntentQuery || len(answer.Query) != 0 {
+		t.Fatalf("ответ по run_sql: %+v", answer)
+	}
+}
+
+func TestAgentParsesToolCallsFromText(t *testing.T) {
+	model := newToolLLM(
+		domain.Reply{Content: `<tool_call>{"name":"aggregate","arguments":{"dataset":"orders","group_by":["status"]}}</tool_call>`},
+		domain.Reply{Content: `<tool_call>{"name":"answer","arguments":{"text":"Готово."}}</tool_call>`},
+	)
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if len(exec.queries) != 1 || answer.Text != "Готово." || answer.Result == nil {
+		t.Fatalf("вызовы текстом не распознаны: %+v", answer)
+	}
+}
+
+func TestAgentStopsAfterMaxSteps(t *testing.T) {
+	var replies []domain.Reply
+	for i := range 10 {
+		replies = append(replies, calls(call(fmt.Sprint("c", i), toolAggregate, `{"dataset":"orders","group_by":["status"]}`)))
+	}
+	model := newToolLLM(replies...)
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if model.conversations() != testAgentConfig().MaxSteps {
+		t.Fatalf("обращений к модели %d, предел %d", model.conversations(), testAgentConfig().MaxSteps)
+	}
+	if answer.Result == nil || len(answer.Warnings) == 0 || answer.Text == "" {
+		t.Fatalf("после исчерпания шагов ожидался последний результат с оговоркой: %+v", answer)
+	}
+}
+
+func TestAgentFallsBackWhenToolsUnsupported(t *testing.T) {
+	model := newToolLLM()
+	model.err = fmt.Errorf("%w: %w", apperr.ErrLLMUnavailable, llm.ErrToolsUnsupported)
+	model.planner = []string{
+		`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`,
+		`{"intent":"query","sql":"SELECT count(*) FROM raw.ds_orders"}`,
+	}
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+
+	for range 2 {
+		answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+		if err != nil {
+			t.Fatalf("неожиданная ошибка: %v", err)
+		}
+		if answer.Intent != domain.IntentQuery {
+			t.Fatalf("запасной путь через план не сработал: %+v", answer)
+		}
+	}
+	if model.conversations() != 1 {
+		t.Fatalf("после отказа в инструментах модель не должна спрашиваться повторно: %d обращений", model.conversations())
+	}
+}
+
+func TestAgentFallsBackWhenModelDown(t *testing.T) {
+	model := newToolLLM()
+	model.err = fmt.Errorf("%w: connection refused", apperr.ErrLLMUnavailable)
+	model.scriptedLLM.err = errors.New("недоступна")
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "что в данных?")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Intent != domain.IntentOverview || len(answer.Warnings) == 0 {
+		t.Fatalf("без модели ожидалось описание по профилю: %+v", answer)
+	}
+	if model.callCount("planner") != 0 {
+		t.Fatal("при недоступной модели не нужно ждать ещё и планировщика")
+	}
+}
