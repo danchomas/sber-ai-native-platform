@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"strings"
+
+	"github.com/heinousness/aibi/internal/core/analytics"
 )
 
 const plannerSystemPrompt = `Ты — аналитический агент BI-платформы. Пользователь — продуктовый аналитик или руководитель, он задаёт вопросы о данных на естественном языке. Твоя задача — выбрать сценарий и, если нужно, написать SQL для PostgreSQL 16.
@@ -115,8 +117,65 @@ func buildAgentPrompt(toolContext string, allowSQL bool) string {
 	return fmt.Sprintf(agentSystemPrompt, note, strings.TrimSpace(toolContext))
 }
 
-func buildPlannerPrompt(schemaContext string) string {
-	return fmt.Sprintf(plannerSystemPrompt, strings.TrimSpace(schemaContext))
+// queryPlannerSystemPrompt — план для моделей без function calling. SQL
+// модель не пишет и здесь: она описывает запрос теми же параметрами, что
+// инструмент aggregate, и платформа собирает его сама.
+const queryPlannerSystemPrompt = `Ты — аналитический агент BI-платформы. Пользователь — продуктовый аналитик или руководитель, он задаёт вопросы о данных на естественном языке. Твоя задача — выбрать сценарий и, если нужно, описать запрос параметрами. SQL ты не пишешь: платформа сама собирает и проверяет запрос.
+
+ДАННЫЕ:
+%s
+
+ПАРАМЕТРЫ ЗАПРОСА (поле query):
+- dataset — имя датасета из списка; колонки — техническое имя или заголовок из файла.
+- metrics — список {"fn": "%s", "column": "колонка", "label": "подпись"}; без metrics считается количество строк. share — доля строк группы в процентах.
+- group_by — до 3 колонок-разрезов.
+- time — {"column": "колонка с датой", "grain": "%s"}. Для сезонности — month_of_year, quarter_of_year, day_of_week.
+- filters — список {"column": "...", "op": "%s", "value": ..., "values": [...]}. Значения бери из частых значений в описании.
+- join — связанные датасеты, только по связям из списка.
+- sort — {"by": "колонка результата", "desc": true}; limit — число строк.
+
+СЦЕНАРИИ (поле intent):
+- "overview" — вопрос о данных в целом: состав, объём, период, структура. query не нужен.
+- "query" — конкретный вопрос по содержанию данных: нужен query.
+- "dashboard" — просьба собрать дашборд или панель: 3-6 виджетов, у каждого свой query и chart.
+- "clarify" — вопрос допускает несколько прочтений. В message — один уточняющий вопрос и 2-3 варианта трактовки.
+- "reject" — ответа нет в данных или вопрос не про данные. В message — причина и что можно спросить вместо.
+- "smalltalk" — вопрос о самой платформе и её возможностях.
+
+КОНТЕКСТ ДИАЛОГА: если вопрос продолжает предыдущий («а по кварталам», «покажи иначе»), возьми параметры прошлого запроса из истории и измени только то, о чём просят.
+
+ВИЗУАЛИЗАЦИЯ (поле chart): type — один из table, kpi, bar, hbar, line, area, pie, donut, scatter, histogram, heatmap. x — колонка результата для оси, y — массив колонок с метриками.
+
+ФОРМАТ ОТВЕТА: только JSON, без пояснений вокруг.
+{
+  "intent": "overview|query|dashboard|clarify|reject|smalltalk",
+  "query": {"dataset": "...", "metrics": [{"fn": "count"}], "group_by": ["..."]},
+  "chart": {"type": "bar", "title": "Заголовок графика"},
+  "title": "короткий заголовок результата",
+  "message": "текст для пользователя, если intent=clarify|reject|smalltalk",
+  "widgets": [{"title": "Заголовок виджета", "question": "на какой вопрос отвечает", "query": {"dataset": "..."}, "chart": {"type": "line"}, "width": 6}],
+  "followups": ["два-три следующих вопроса"]
+}`
+
+const repairQuerySystemPrompt = `Ты исправляешь параметры аналитического запроса, которые платформа не смогла собрать или выполнить.
+
+Верни только JSON: {"query": {исправленные параметры}} или {"intent": "clarify", "message": "почему запрос невозможен"}.
+Используй только датасеты и колонки из описания данных. SQL не пиши.`
+
+func buildPlannerPrompt(schemaContext string, allowSQL bool) string {
+	if allowSQL {
+		return fmt.Sprintf(plannerSystemPrompt, strings.TrimSpace(schemaContext))
+	}
+	return fmt.Sprintf(queryPlannerSystemPrompt, strings.TrimSpace(schemaContext),
+		joinValues(analytics.Funcs), joinValues(analytics.Grains), joinValues(analytics.Ops))
+}
+
+func joinValues[T ~string](values []T) string {
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = string(v)
+	}
+	return strings.Join(parts, "|")
 }
 
 func buildRepairPrompt(schemaContext, question, badSQL, reason string) string {

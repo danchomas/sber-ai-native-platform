@@ -303,8 +303,8 @@ func TestAgentFallsBackWhenToolsUnsupported(t *testing.T) {
 	model := newToolLLM()
 	model.err = fmt.Errorf("%w: %w", apperr.ErrLLMUnavailable, llm.ErrToolsUnsupported)
 	model.planner = []string{
-		`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`,
-		`{"intent":"query","sql":"SELECT count(*) FROM raw.ds_orders"}`,
+		`{"intent":"query","query":{"dataset":"orders","group_by":["status"]}}`,
+		`{"intent":"query","query":{"dataset":"orders","metrics":[{"fn":"count"}]}}`,
 	}
 	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
 
@@ -337,5 +337,51 @@ func TestAgentFallsBackWhenModelDown(t *testing.T) {
 	}
 	if model.callCount("planner") != 0 {
 		t.Fatal("при недоступной модели не нужно ждать ещё и планировщика")
+	}
+}
+
+func TestPlanWithoutToolsNeverRunsModelSQL(t *testing.T) {
+	model := newScriptedLLM(`{"intent":"query","sql":"SELECT * FROM raw.ds_orders"}`)
+	model.repair = []string{`{"query":{"dataset":"orders","group_by":["Статус"],"filters":[{"column":"status","op":"ne","value":"cancelled"}]}}`}
+	exec := &fakeExecutor{result: sampleResult()}
+	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "заказы по статусам")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if model.callCount("repair") != 1 {
+		t.Fatalf("SQL модели должен быть отклонён и переписан в параметры: починок %d", model.callCount("repair"))
+	}
+	if len(exec.queries) != 1 || !strings.Contains(exec.queries[0], `t0."status" <> $1`) {
+		t.Fatalf("выполняться должен только собранный платформой запрос: %v", exec.queries)
+	}
+	if answer.Intent != domain.IntentQuery || len(answer.Query) == 0 {
+		t.Fatalf("ответ по плану с параметрами: %+v", answer)
+	}
+}
+
+func TestPlanDashboardWithQueries(t *testing.T) {
+	model := newScriptedLLM(`{"intent":"dashboard","title":"Панель","widgets":[
+		{"title":"Всего","query":{"dataset":"orders","metrics":[{"fn":"count"}]},"chart":{"type":"kpi"}},
+		{"title":"По месяцам","query":{"dataset":"orders","time":{"column":"created_at","grain":"month"}}},
+		{"title":"SQL-виджет","sql":"SELECT 1 FROM raw.ds_orders"}
+	]}`)
+	dashboards := &fakeDashboards{}
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, dashboards)
+
+	answer, err := svc.Ask(context.Background(), sessionID, "собери панель")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Intent != domain.IntentDashboard || len(dashboards.created) != 1 {
+		t.Fatalf("ожидался дашборд: %+v", answer)
+	}
+	widgets := dashboards.created[0].Widgets
+	if len(widgets) != 2 || len(widgets[0].Query) == 0 {
+		t.Fatalf("SQL-виджет не должен попасть на панель, остальные хранят query: %+v", widgets)
+	}
+	if len(answer.Warnings) != 1 {
+		t.Fatalf("о пропущенном виджете нужно предупредить: %v", answer.Warnings)
 	}
 }

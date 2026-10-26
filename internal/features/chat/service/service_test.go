@@ -40,6 +40,19 @@ func sampleResult() *domain.ResultSet {
 
 func newTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dashboards) (*Service, uuid.UUID, *memorySessions) {
 	t.Helper()
+	return newTestAgentWith(t, testAgentConfig(), model, exec, dashboards)
+}
+
+// newSQLTestAgent — агент в режиме AGENT_ALLOW_RAW_SQL: план содержит SQL.
+func newSQLTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dashboards) (*Service, uuid.UUID, *memorySessions) {
+	t.Helper()
+	cfg := testAgentConfig()
+	cfg.AllowRawSQL = true
+	return newTestAgentWith(t, cfg, model, exec, dashboards)
+}
+
+func newTestAgentWith(t *testing.T, cfg config.Agent, model domain.LLM, exec Executor, dashboards Dashboards) (*Service, uuid.UUID, *memorySessions) {
+	t.Helper()
 
 	sessions := newMemorySessions()
 	session := &domain.Session{ID: uuid.New(), Title: "тест"}
@@ -47,7 +60,7 @@ func newTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dash
 		t.Fatalf("создание сессии: %v", err)
 	}
 
-	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), testAgentConfig(), testLogger())
+	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), cfg, testLogger())
 	return svc, session.ID, sessions
 }
 
@@ -56,7 +69,7 @@ func TestAskQueryHappyPath(t *testing.T) {
 	model.narration = "Больше всего заказов в статусе paid — 700 из 1000."
 
 	exec := &fakeExecutor{result: sampleResult()}
-	svc, sessionID, sessions := newTestAgent(t, model, exec, &fakeDashboards{})
+	svc, sessionID, sessions := newSQLTestAgent(t, model, exec, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "Сколько заказов в каждом статусе?")
 	if err != nil {
@@ -95,7 +108,7 @@ func TestAskRepairsUnsafeSQL(t *testing.T) {
 	model.narration = "Готово."
 
 	exec := &fakeExecutor{result: sampleResult()}
-	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+	svc, sessionID, _ := newSQLTestAgent(t, model, exec, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "Разбивка по статусам")
 	if err != nil {
@@ -118,7 +131,7 @@ func TestAskRepairsExecutionError(t *testing.T) {
 	model.narration = "Готово."
 
 	exec := &fakeExecutor{result: sampleResult(), failOnce: errors.New(`ERROR: column "wrong_column" does not exist`)}
-	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+	svc, sessionID, _ := newSQLTestAgent(t, model, exec, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "Статусы")
 	if err != nil {
@@ -136,7 +149,7 @@ func TestAskGivesUpAfterRepairs(t *testing.T) {
 		`{"sql":"TRUNCATE raw.ds_orders"}`,
 	}
 
-	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+	svc, sessionID, _ := newSQLTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "удали всё")
 	if err != nil {
@@ -153,7 +166,7 @@ func TestAskGivesUpAfterRepairs(t *testing.T) {
 func TestAskQueryTimeoutExplained(t *testing.T) {
 	model := newScriptedLLM(`{"intent":"query","sql":"SELECT * FROM raw.ds_orders"}`)
 	exec := &fakeExecutor{err: apperr.ErrQueryTimeout}
-	svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+	svc, sessionID, _ := newSQLTestAgent(t, model, exec, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "выгрузи всё")
 	if err != nil {
@@ -216,7 +229,7 @@ func TestAskBuildsDashboard(t *testing.T) {
 	]}`)
 
 	dashboards := &fakeDashboards{}
-	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, dashboards)
+	svc, sessionID, _ := newSQLTestAgent(t, model, &fakeExecutor{result: sampleResult()}, dashboards)
 
 	answer, err := svc.Ask(context.Background(), sessionID, "Собери дашборд с квартальной статистикой")
 	if err != nil {
@@ -300,7 +313,7 @@ func TestAskValidatesQuestion(t *testing.T) {
 func TestNarrationFallback(t *testing.T) {
 
 	model := newScriptedLLM(`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`)
-	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+	svc, sessionID, _ := newSQLTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
 	if err != nil {

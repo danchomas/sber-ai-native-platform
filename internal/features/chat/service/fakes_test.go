@@ -39,7 +39,7 @@ func (l *scriptedLLM) Complete(_ context.Context, req domain.Completion) (string
 	case strings.Contains(req.System, "аналитический агент BI-платформы"):
 		l.calls["planner"]++
 		return pop(&l.planner)
-	case strings.Contains(req.System, "исправляешь SQL-запрос"):
+	case strings.Contains(req.System, "Ты исправляешь"):
 		l.calls["repair"]++
 		return pop(&l.repair)
 	case strings.Contains(req.System, "объясняет результат запроса"):
