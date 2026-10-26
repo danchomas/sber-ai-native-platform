@@ -7,7 +7,8 @@ import { Spinner } from "../../shared/ui/Spinner.jsx";
 import "./styles.css";
 
 export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
-  const { items, current, error, loading, reload, remove } = useDashboards({ openId, onCount });
+  const { items, current, error, loading, reload, refresh, remove, removeWidget, rename } =
+    useDashboards({ openId, onCount });
 
   return (
     <section className={`view${active ? " active" : ""}`}>
@@ -51,8 +52,17 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                   </div>
                 </div>
                 <div className="ds-actions">
-                  <button className="icon-btn" onClick={() => onOpen(current.id)}>
+                  <button className="icon-btn" onClick={refresh}>
                     Обновить
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={async () => {
+                      const title = window.prompt("Новое название дашборда", current.title);
+                      if (title && title.trim() && title.trim() !== current.title) await rename(current.id, title.trim());
+                    }}
+                  >
+                    Переименовать
                   </button>
                   <button
                     className="icon-btn"
@@ -67,11 +77,26 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                 </div>
               </div>
 
-              <div className="dash-grid">
-                {(current.widgets || []).map((w) => (
-                  <Widget key={w.id || w.title} widget={w} theme={theme} />
-                ))}
-              </div>
+              {(current.widgets || []).length ? (
+                <div className="dash-grid">
+                  {current.widgets.map((w) => (
+                    <Widget
+                      key={w.id || w.title}
+                      widget={w}
+                      theme={theme}
+                      onRemove={async () => {
+                        if (!window.confirm(`Убрать виджет «${w.title}» с дашборда?`)) return;
+                        await removeWidget(current.id, w.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="На дашборде пока пусто">
+                  Закрепите ответ из чата кнопкой «Закрепить на дашборде» или попросите агента:
+                  «добавь на дашборд выручку по месяцам».
+                </EmptyState>
+              )}
             </div>
           ) : null}
         </div>

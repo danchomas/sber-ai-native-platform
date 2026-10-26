@@ -100,6 +100,22 @@ export class PlatformApi {
     return this.http.del(`/dashboards/${id}`);
   }
 
+  createDashboard(title, widgets, description = "") {
+    return this.http.post("/dashboards", { title, description, widgets });
+  }
+
+  renameDashboard(id, title) {
+    return this.http.patch(`/dashboards/${id}`, { title });
+  }
+
+  addWidget(dashboardId, widget) {
+    return this.http.post(`/dashboards/${dashboardId}/widgets`, widget);
+  }
+
+  removeWidget(dashboardId, widgetId) {
+    return this.http.del(`/dashboards/${dashboardId}/widgets/${widgetId}`);
+  }
+
   // ── Ad-hoc SQL ────────────────────────────────────────────────────
   runQuery(sql, maxRows) {
     return this.http.post("/query", { sql, max_rows: maxRows ?? 0 });
