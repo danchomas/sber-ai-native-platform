@@ -52,11 +52,14 @@ type Answer struct {
 	Chart        *ChartSpec      `json:"chart,omitempty"`
 	ChartOptions []ChartSpec     `json:"chart_options,omitempty"`
 	DashboardID  *uuid.UUID      `json:"dashboard_id,omitempty"`
-	Datasets     []string        `json:"datasets,omitempty"`
-	Followups    []string        `json:"followups,omitempty"`
-	Warnings     []string        `json:"warnings,omitempty"`
-	Steps        []AgentStep     `json:"steps,omitempty"`
-	Elapsed      int64           `json:"elapsed_ms"`
+	// Analysis — вид расчёта поверх данных: forecast, seasonality,
+	// correlation, anomalies. Такой результат не закрепляется на дашборде.
+	Analysis  string      `json:"analysis,omitempty"`
+	Datasets  []string    `json:"datasets,omitempty"`
+	Followups []string    `json:"followups,omitempty"`
+	Warnings  []string    `json:"warnings,omitempty"`
+	Steps     []AgentStep `json:"steps,omitempty"`
+	Elapsed   int64       `json:"elapsed_ms"`
 }
 
 // AgentStep — один вызов инструмента в цикле агента. Показывается

@@ -13,6 +13,13 @@ const INTENT_LABELS = {
   smalltalk: "о платформе",
 };
 
+const ANALYSIS_LABELS = {
+  forecast: "прогноз",
+  seasonality: "сезонность",
+  correlation: "связь показателей",
+  anomalies: "выбросы",
+};
+
 const CHART_LABELS = {
   kpi: "Число",
   bar: "Столбцы",
@@ -59,10 +66,11 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
   const options = answer?.chart_options || [];
   const [chart, setChart] = useState(answer?.chart);
   const [pinning, setPinning] = useState(false);
-  const canPin = hasResult && (answer.query || answer.sql) && answer.intent === "query";
+  // Прогноз и другие расчёты поверх данных не пересчитать на дашборде.
+  const canPin = hasResult && !answer.analysis && (answer.query || answer.sql) && answer.intent === "query";
   const meta = [];
   if (answer) {
-    meta.push(INTENT_LABELS[answer.intent] || answer.intent);
+    meta.push(ANALYSIS_LABELS[answer.analysis] || INTENT_LABELS[answer.intent] || answer.intent);
     if (answer.datasets?.length) meta.push(answer.datasets.join(", "));
     if (answer.elapsed_ms) meta.push(`${(answer.elapsed_ms / 1000).toFixed(1)} с`);
   }

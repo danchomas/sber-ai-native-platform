@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -422,5 +423,103 @@ func TestAgentEditsExistingDashboard(t *testing.T) {
 	listed := model.requests[1].Messages
 	if last := listed[len(listed)-1]; !strings.Contains(last.Content, existing.Widgets[0].ID.String()) {
 		t.Fatalf("модель должна увидеть id виджетов: %s", last.Content)
+	}
+}
+
+func monthlyResult(columns []string, rows int, value func(i int) []any) *domain.ResultSet {
+	rs := &domain.ResultSet{}
+	rs.Columns = append(rs.Columns, domain.ResultColumn{Name: columns[0], Type: domain.ColumnTypeDate})
+	for _, c := range columns[1:] {
+		rs.Columns = append(rs.Columns, domain.ResultColumn{Name: c, Type: domain.ColumnTypeNumeric})
+	}
+	for i := range rows {
+		period := time.Date(2022, time.January, 1, 0, 0, 0, 0, time.UTC).AddDate(0, i, 0).Format("2006-01-02")
+		rs.Rows = append(rs.Rows, append([]any{period}, value(i)...))
+	}
+	rs.RowCount = len(rs.Rows)
+	return rs
+}
+
+func TestAgentInsightTools(t *testing.T) {
+	seasonal := monthlyResult([]string{"Месяц", "Сумма"}, 36, func(i int) []any {
+		v := 100.0 + float64(i)
+		if i%12 == 6 {
+			v += 80
+		}
+		return []any{v}
+	})
+	leading := monthlyResult([]string{"Месяц", "Реклама", "Заказы"}, 24, func(i int) []any {
+		ad := float64((i * 7) % 11)
+		prev := float64(((i - 1) * 7) % 11)
+		if i == 0 {
+			prev = 0
+		}
+		return []any{ad, prev * 10}
+	})
+
+	cases := []struct {
+		name     string
+		result   *domain.ResultSet
+		call     string
+		args     string
+		analysis string
+		chart    domain.ChartType
+		want     []string
+	}{
+		{
+			name: "сезонность", result: seasonal, call: toolSeasonality,
+			args:     `{"dataset":"orders","time":{"column":"created_at","grain":"month"},"metric":{"fn":"sum","column":"amount"}}`,
+			analysis: "seasonality", chart: domain.ChartTypeBar,
+			want: []string{`"peak":"Июль"`, "Отклонение от среднего"},
+		},
+		{
+			name: "прогноз", result: seasonal, call: toolForecast,
+			args:     `{"dataset":"orders","time":{"column":"created_at","grain":"month"},"metric":{"fn":"sum","column":"amount"},"horizon":6}`,
+			analysis: "forecast", chart: domain.ChartTypeLine,
+			want: []string{`"method":"тренд с сезонностью"`, `"horizon":6`},
+		},
+		{
+			name: "корреляция с лагом", result: leading, call: toolCorrelate,
+			args:     `{"dataset":"orders","time":{"column":"created_at","grain":"month"},"x":{"fn":"sum","column":"amount","label":"Реклама"},"y":{"fn":"count","label":"Заказы"},"max_lag":3}`,
+			analysis: "correlation", chart: domain.ChartTypeBar,
+			want: []string{`"best_lag":1`, `"strength":"сильная"`},
+		},
+		{
+			name: "выбросы", result: seasonal, call: toolAnomalies,
+			args:     `{"dataset":"orders","time":{"column":"created_at","grain":"month"}}`,
+			analysis: "anomalies", chart: domain.ChartTypeTable,
+			want: []string{`"periods_checked":36`},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			model := newToolLLM(
+				calls(call("c1", tc.call, tc.args)),
+				calls(call("c2", toolAnswer, `{"text":"Готово."}`)),
+			)
+			exec := &fakeExecutor{result: tc.result}
+			svc, sessionID, _ := newTestAgent(t, model, exec, &fakeDashboards{})
+
+			answer, err := svc.Ask(context.Background(), sessionID, "гипотеза")
+			if err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+			out := model.toolMessages()[0].Content
+			for _, w := range tc.want {
+				if !strings.Contains(out, w) {
+					t.Errorf("в результате инструмента нет %s:\n%s", w, out)
+				}
+			}
+			if answer.Analysis != tc.analysis || answer.Chart == nil || answer.Chart.Type != tc.chart {
+				t.Fatalf("ответ: анализ %q, график %+v", answer.Analysis, answer.Chart)
+			}
+			if len(answer.Query) != 0 {
+				t.Fatal("у производного расчёта нет параметров запроса для дашборда")
+			}
+			if len(exec.queries) != 1 || !strings.Contains(exec.queries[0], "date_trunc('month'") {
+				t.Fatalf("ряд должен собираться компилятором: %v", exec.queries)
+			}
+		})
 	}
 }

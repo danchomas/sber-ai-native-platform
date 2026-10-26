@@ -201,6 +201,7 @@ func agentTools(allowSQL bool) []domain.ToolSpec {
 			}, "message"),
 		},
 	}
+	tools = append(tools, insightTools()...)
 	if allowSQL {
 		tools = append(tools, struct {
 			name, desc string

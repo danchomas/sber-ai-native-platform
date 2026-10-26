@@ -41,6 +41,8 @@ type agentResult struct {
 	result   *domain.ResultSet
 	tables   []string
 	warnings []string
+	analysis string
+	chart    *domain.ChartSpec
 }
 
 type agentFinal struct {
@@ -231,6 +233,8 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 
 	case toolDashboard:
 		return r.createDashboard(ctx, call.Arguments)
+	case toolSeasonality, toolCorrelate, toolForecast, toolAnomalies:
+		return r.insight(ctx, call)
 	case toolDashboards:
 		return r.listDashboards(ctx)
 	case toolAddWidgets:
@@ -347,6 +351,11 @@ func (r *agentRun) buildWidgets(args []widgetArgs) ([]domain.Widget, []string) {
 		res := r.result(w.ResultID)
 		if res == nil || w.ResultID == "" {
 			problems = append(problems, fmt.Sprintf("результата %q нет", w.ResultID))
+			continue
+		}
+		if res.analysis != "" {
+			problems = append(problems, fmt.Sprintf(
+				"%s — расчёт поверх данных, его не пересчитать на дашборде: закрепи исходный ряд через aggregate", w.ResultID))
 			continue
 		}
 		title := orDefault(w.Title, res.title)
@@ -539,7 +548,11 @@ func (r *agentRun) finish(content string) *domain.Answer {
 
 	if res := r.result(f.resultID); res != nil {
 		title := orDefault(res.title, r.question)
-		spec := chart.Normalize(f.chart.chartSpec(), res.result, title)
+		proposed := f.chart.chartSpec()
+		if proposed == nil {
+			proposed = res.chart
+		}
+		spec := chart.Normalize(proposed, res.result, title)
 		answer.Intent = domain.IntentQuery
 		answer.SQL = res.sql
 		answer.Result = res.result
@@ -547,6 +560,7 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		answer.ChartOptions = chart.Options(spec, res.result)
 		answer.Datasets = r.usedDatasets([]*agentResult{res})
 		answer.Warnings = append(answer.Warnings, res.warnings...)
+		answer.Analysis = res.analysis
 		if res.query != nil {
 			answer.Query, _ = json.Marshal(res.query)
 		}
@@ -611,6 +625,14 @@ func stepTitle(tool string) string {
 		return "Выполнил SQL-запрос"
 	case toolDashboard:
 		return "Собрал дашборд"
+	case toolSeasonality:
+		return "Оценил сезонность"
+	case toolCorrelate:
+		return "Проверил связь показателей"
+	case toolForecast:
+		return "Построил прогноз"
+	case toolAnomalies:
+		return "Поискал выбросы"
 	case toolDashboards:
 		return "Посмотрел сохранённые дашборды"
 	case toolAddWidgets:
