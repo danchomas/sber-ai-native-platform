@@ -18,6 +18,9 @@ const (
 	toolDuplicates = "find_duplicates"
 	toolSQL        = "run_sql"
 	toolDashboard  = "create_dashboard"
+	toolDashboards = "list_dashboards"
+	toolAddWidgets = "add_to_dashboard"
+	toolRemove     = "remove_widget"
 	toolAnswer     = "answer"
 	toolClarify    = "clarify"
 	toolDecline    = "decline"
@@ -79,6 +82,15 @@ func sortSchema() schema {
 	}, "by")
 }
 
+func widgetsSchema() schema {
+	return list(object(schema{
+		"result_id": text("result_id из aggregate"),
+		"title":     text("заголовок виджета"),
+		"chart":     chartSchema(),
+		"width":     schema{"type": "integer", "description": "ширина из 12 колонок: 3 — число, 6 — половина, 12 — во всю ширину"},
+	}, "result_id"), "виджеты")
+}
+
 func agentTools(allowSQL bool) []domain.ToolSpec {
 	tools := []struct {
 		name, desc string
@@ -138,13 +150,29 @@ func agentTools(allowSQL bool) []domain.ToolSpec {
 			object(schema{
 				"title":       text("название дашборда"),
 				"description": text("о чём дашборд"),
-				"widgets": list(object(schema{
-					"result_id": text("result_id из aggregate"),
-					"title":     text("заголовок виджета"),
-					"chart":     chartSchema(),
-					"width":     schema{"type": "integer", "description": "ширина из 12 колонок: 3 — число, 6 — половина, 12 — во всю ширину"},
-				}, "result_id"), "виджеты, от 2 до 8"),
+				"widgets":     widgetsSchema(),
 			}, "title", "widgets"),
+		},
+		{
+			toolDashboards,
+			"Список сохранённых дашбордов с их виджетами. Вызывай, когда просят изменить существующую панель.",
+			object(schema{}),
+		},
+		{
+			toolAddWidgets,
+			"Добавить на существующий дашборд виджеты из уже посчитанных результатов.",
+			object(schema{
+				"dashboard_id": text("id дашборда из list_dashboards"),
+				"widgets":      widgetsSchema(),
+			}, "dashboard_id", "widgets"),
+		},
+		{
+			toolRemove,
+			"Убрать виджет с дашборда.",
+			object(schema{
+				"dashboard_id": text("id дашборда из list_dashboards"),
+				"widget_id":    text("id виджета из list_dashboards"),
+			}, "dashboard_id", "widget_id"),
 		},
 		{
 			toolAnswer,

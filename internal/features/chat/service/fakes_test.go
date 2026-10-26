@@ -226,7 +226,27 @@ func (m *memorySessions) LastTurns(_ context.Context, id uuid.UUID, _ int) ([]do
 
 type fakeDashboards struct {
 	created []domain.Dashboard
+	added   []domain.Widget
+	removed []uuid.UUID
 	err     error
+}
+
+func (d *fakeDashboards) List(context.Context, int) ([]domain.Dashboard, error) {
+	return d.created, d.err
+}
+
+func (d *fakeDashboards) AddWidget(_ context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+	w.ID, w.DashboardID = uuid.New(), dashboardID
+	d.added = append(d.added, w)
+	return &w, nil
+}
+
+func (d *fakeDashboards) RemoveWidget(_ context.Context, _ uuid.UUID, widgetID uuid.UUID) error {
+	d.removed = append(d.removed, widgetID)
+	return d.err
 }
 
 func (d *fakeDashboards) CreateFromWidgets(

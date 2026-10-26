@@ -14,11 +14,11 @@ type plan struct {
 	Intent    string           `json:"intent"`
 	SQL       string           `json:"sql"`
 	Query     *analytics.Query `json:"query"`
-	Chart     *chartJSON   `json:"chart"`
-	Title     string       `json:"title"`
-	Message   string       `json:"message"`
-	Followups stringList   `json:"followups"`
-	Widgets   []widgetJSON `json:"widgets"`
+	Chart     *chartJSON       `json:"chart"`
+	Title     string           `json:"title"`
+	Message   string           `json:"message"`
+	Followups stringList       `json:"followups"`
+	Widgets   []widgetJSON     `json:"widgets"`
 }
 
 type chartJSON struct {
@@ -33,12 +33,12 @@ type chartJSON struct {
 }
 
 type widgetJSON struct {
-	Title    string     `json:"title"`
+	Title    string           `json:"title"`
 	Question string           `json:"question"`
 	SQL      string           `json:"sql"`
 	Query    *analytics.Query `json:"query"`
-	Chart    *chartJSON `json:"chart"`
-	Width    int        `json:"width"`
+	Chart    *chartJSON       `json:"chart"`
+	Width    int              `json:"width"`
 }
 
 type stringList []string

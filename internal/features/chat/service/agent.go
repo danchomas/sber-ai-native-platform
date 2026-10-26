@@ -66,6 +66,7 @@ type agentRun struct {
 	warnings  []string
 	described bool
 	dashboard *domain.Dashboard
+	edited    bool
 	final     *agentFinal
 }
 
@@ -230,6 +231,12 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 
 	case toolDashboard:
 		return r.createDashboard(ctx, call.Arguments)
+	case toolDashboards:
+		return r.listDashboards(ctx)
+	case toolAddWidgets:
+		return r.addWidgets(ctx, call.Arguments)
+	case toolRemove:
+		return r.removeWidget(ctx, call.Arguments)
 
 	case toolAnswer:
 		var args struct {
@@ -321,33 +328,22 @@ func (r *agentRun) duplicates(ctx context.Context, dataset string, columns []str
 	return encodeOutput(payload), rows, nil
 }
 
-func (r *agentRun) createDashboard(ctx context.Context, raw json.RawMessage) (string, int, error) {
-	if r.dashboard != nil {
-		return "", 0, errors.New("дашборд по этому вопросу уже создан: заверши работу через answer")
-	}
-	var args struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Widgets     []struct {
-			ResultID string     `json:"result_id"`
-			Title    string     `json:"title"`
-			Chart    *chartJSON `json:"chart"`
-			Width    int        `json:"width"`
-		} `json:"widgets"`
-	}
-	if err := decodeArgs(normalizeArgs(raw, "widgets"), &args); err != nil {
-		return "", 0, err
-	}
-	if len(args.Widgets) == 0 {
-		return "", 0, errors.New("нужен хотя бы один виджет: сначала посчитай показатели через aggregate")
-	}
-	if len(args.Widgets) > maxWidgets {
-		args.Widgets = args.Widgets[:maxWidgets]
-	}
+type widgetArgs struct {
+	ResultID string     `json:"result_id"`
+	Title    string     `json:"title"`
+	Chart    *chartJSON `json:"chart"`
+	Width    int        `json:"width"`
+}
 
-	widgets := make([]domain.Widget, 0, len(args.Widgets))
+// buildWidgets превращает ссылки на результаты в виджеты. Виджет хранит
+// параметры запроса, а не выгрузку: при открытии панели цифры пересчитаются.
+func (r *agentRun) buildWidgets(args []widgetArgs) ([]domain.Widget, []string) {
+	if len(args) > maxWidgets {
+		args = args[:maxWidgets]
+	}
+	widgets := make([]domain.Widget, 0, len(args))
 	var problems []string
-	for _, w := range args.Widgets {
+	for _, w := range args {
 		res := r.result(w.ResultID)
 		if res == nil || w.ResultID == "" {
 			problems = append(problems, fmt.Sprintf("результата %q нет", w.ResultID))
@@ -368,6 +364,26 @@ func (r *agentRun) createDashboard(ctx context.Context, raw json.RawMessage) (st
 		}
 		widgets = append(widgets, widget)
 	}
+	return widgets, problems
+}
+
+func (r *agentRun) createDashboard(ctx context.Context, raw json.RawMessage) (string, int, error) {
+	if r.dashboard != nil {
+		return "", 0, errors.New("дашборд по этому вопросу уже создан: заверши работу через answer")
+	}
+	var args struct {
+		Title       string       `json:"title"`
+		Description string       `json:"description"`
+		Widgets     []widgetArgs `json:"widgets"`
+	}
+	if err := decodeArgs(normalizeArgs(raw, "widgets"), &args); err != nil {
+		return "", 0, err
+	}
+	if len(args.Widgets) == 0 {
+		return "", 0, errors.New("нужен хотя бы один виджет: сначала посчитай показатели через aggregate")
+	}
+
+	widgets, problems := r.buildWidgets(args.Widgets)
 	if len(widgets) == 0 {
 		return "", 0, fmt.Errorf("ни один виджет не собран: %s", strings.Join(problems, "; "))
 	}
@@ -385,6 +401,102 @@ func (r *agentRun) createDashboard(ctx context.Context, raw json.RawMessage) (st
 		out["skipped"] = problems
 	}
 	return encodeOutput(out), len(widgets), nil
+}
+
+func (r *agentRun) listDashboards(ctx context.Context) (string, int, error) {
+	dashboards, err := r.s.dashboards.List(ctx, 20)
+	if err != nil {
+		return "", 0, err
+	}
+	out := make([]map[string]any, 0, len(dashboards))
+	for _, d := range dashboards {
+		widgets := make([]map[string]any, 0, len(d.Widgets))
+		for _, w := range d.Widgets {
+			widgets = append(widgets, map[string]any{"widget_id": w.ID, "title": w.Title, "chart": w.Chart.Type})
+		}
+		out = append(out, map[string]any{"dashboard_id": d.ID, "title": d.Title, "widgets": widgets})
+	}
+	if len(out) == 0 {
+		return encodeOutput(map[string]any{"dashboards": out, "note": "дашбордов пока нет, создай новый через create_dashboard"}), 0, nil
+	}
+	return encodeOutput(map[string]any{"dashboards": out}), len(out), nil
+}
+
+func (r *agentRun) dashboardByID(ctx context.Context, raw string) (*domain.Dashboard, error) {
+	id, err := uuid.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, errors.New("dashboard_id должен быть id из list_dashboards")
+	}
+	dashboards, err := r.s.dashboards.List(ctx, 50)
+	if err != nil {
+		return nil, err
+	}
+	for i := range dashboards {
+		if dashboards[i].ID == id {
+			return &dashboards[i], nil
+		}
+	}
+	return nil, fmt.Errorf("дашборда %s нет: проверь list_dashboards", id)
+}
+
+func (r *agentRun) addWidgets(ctx context.Context, raw json.RawMessage) (string, int, error) {
+	var args struct {
+		DashboardID string       `json:"dashboard_id"`
+		Widgets     []widgetArgs `json:"widgets"`
+	}
+	if err := decodeArgs(normalizeArgs(raw, "widgets"), &args); err != nil {
+		return "", 0, err
+	}
+	dashboard, err := r.dashboardByID(ctx, args.DashboardID)
+	if err != nil {
+		return "", 0, err
+	}
+	widgets, problems := r.buildWidgets(args.Widgets)
+	if len(widgets) == 0 {
+		return "", 0, fmt.Errorf("нечего добавить: %s", strings.Join(append(problems, "посчитай показатель через aggregate"), "; "))
+	}
+
+	added := 0
+	for _, w := range widgets {
+		if _, err := r.s.dashboards.AddWidget(ctx, dashboard.ID, w); err != nil {
+			problems = append(problems, fmt.Sprintf("«%s»: %s", w.Title, humanReason(err)))
+			continue
+		}
+		added++
+	}
+	if added == 0 {
+		return "", 0, fmt.Errorf("виджеты не добавлены: %s", strings.Join(problems, "; "))
+	}
+	r.dashboard, r.edited = dashboard, true
+
+	out := map[string]any{"dashboard_id": dashboard.ID, "added": added}
+	if len(problems) > 0 {
+		out["skipped"] = problems
+	}
+	return encodeOutput(out), added, nil
+}
+
+func (r *agentRun) removeWidget(ctx context.Context, raw json.RawMessage) (string, int, error) {
+	var args struct {
+		DashboardID string `json:"dashboard_id"`
+		WidgetID    string `json:"widget_id"`
+	}
+	if err := decodeArgs(raw, &args); err != nil {
+		return "", 0, err
+	}
+	dashboard, err := r.dashboardByID(ctx, args.DashboardID)
+	if err != nil {
+		return "", 0, err
+	}
+	widgetID, err := uuid.Parse(strings.TrimSpace(args.WidgetID))
+	if err != nil {
+		return "", 0, errors.New("widget_id должен быть id из list_dashboards")
+	}
+	if err := r.s.dashboards.RemoveWidget(ctx, dashboard.ID, widgetID); err != nil {
+		return "", 0, err
+	}
+	r.dashboard, r.edited = dashboard, true
+	return `{"ok":true}`, 1, nil
 }
 
 func (r *agentRun) result(id string) *agentResult {
@@ -417,7 +529,11 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		answer.Intent = domain.IntentDashboard
 		answer.DashboardID = &r.dashboard.ID
 		answer.Datasets = r.usedDatasets(r.results)
-		answer.Text = orDefault(f.text, dashboardSummary(r.dashboard))
+		summary := dashboardSummary(r.dashboard)
+		if r.edited {
+			summary = "Обновил дашборд «" + r.dashboard.Title + "». Изменения уже на вкладке «Дашборды»."
+		}
+		answer.Text = orDefault(f.text, summary)
 		return answer
 	}
 
@@ -428,6 +544,7 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		answer.SQL = res.sql
 		answer.Result = res.result
 		answer.Chart = &spec
+		answer.ChartOptions = chart.Options(spec, res.result)
 		answer.Datasets = r.usedDatasets([]*agentResult{res})
 		answer.Warnings = append(answer.Warnings, res.warnings...)
 		if res.query != nil {
@@ -494,6 +611,12 @@ func stepTitle(tool string) string {
 		return "Выполнил SQL-запрос"
 	case toolDashboard:
 		return "Собрал дашборд"
+	case toolDashboards:
+		return "Посмотрел сохранённые дашборды"
+	case toolAddWidgets:
+		return "Добавил виджеты на дашборд"
+	case toolRemove:
+		return "Убрал виджет с дашборда"
 	}
 	return "Неизвестный инструмент «" + tool + "»"
 }

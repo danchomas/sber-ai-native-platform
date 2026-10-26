@@ -119,6 +119,65 @@ func (r *DashboardRepository) List(ctx context.Context, limit int) ([]domain.Das
 	return out, nil
 }
 
+// AddWidget дописывает виджет в конец панели.
+func (r *DashboardRepository) AddWidget(ctx context.Context, dashboardID uuid.UUID, w *domain.Widget) error {
+	return corepg.WithTx(ctx, r.pool, func(tx pgx.Tx) error {
+		var position int
+		if err := tx.QueryRow(ctx, `
+			UPDATE dashboards SET updated_at = now() WHERE id = $1
+			RETURNING (SELECT coalesce(max(position) + 1, 0) FROM dashboard_widgets WHERE dashboard_id = $1)`,
+			dashboardID).Scan(&position); err != nil {
+			return corepg.MapError(err)
+		}
+
+		if w.ID == uuid.Nil {
+			w.ID = uuid.New()
+		}
+		w.DashboardID, w.Position = dashboardID, position
+		if w.Width <= 0 || w.Width > 12 {
+			w.Width = 6
+		}
+		chart, err := json.Marshal(w.Chart)
+		if err != nil {
+			return fmt.Errorf("сериализация визуализации: %w", err)
+		}
+		var query any
+		if len(w.Query) > 0 {
+			query = []byte(w.Query)
+		}
+		_, err = tx.Exec(ctx, `
+			INSERT INTO dashboard_widgets (id, dashboard_id, position, title, question, sql, chart, width, query)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			w.ID, w.DashboardID, w.Position, w.Title, w.Question, w.SQL, chart, w.Width, query)
+		return corepg.MapError(err)
+	})
+}
+
+func (r *DashboardRepository) DeleteWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error {
+	tag, err := r.pool.Exec(ctx,
+		`DELETE FROM dashboard_widgets WHERE id = $1 AND dashboard_id = $2`, widgetID, dashboardID)
+	if err != nil {
+		return corepg.MapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.ErrNotFound
+	}
+	_, err = r.pool.Exec(ctx, `UPDATE dashboards SET updated_at = now() WHERE id = $1`, dashboardID)
+	return corepg.MapError(err)
+}
+
+func (r *DashboardRepository) Rename(ctx context.Context, id uuid.UUID, title string) error {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE dashboards SET title = $2, updated_at = now() WHERE id = $1`, id, title)
+	if err != nil {
+		return corepg.MapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return apperr.ErrNotFound
+	}
+	return nil
+}
+
 func (r *DashboardRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM dashboards WHERE id = $1`, id)
 	if err != nil {

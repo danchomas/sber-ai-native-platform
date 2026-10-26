@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -57,16 +58,121 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, r, http.StatusNoContent, nil)
 }
 
+type widgetRequest struct {
+	Title    string           `json:"title"`
+	Question string           `json:"question"`
+	SQL      string           `json:"sql"`
+	Query    json.RawMessage  `json:"query"`
+	Chart    domain.ChartSpec `json:"chart"`
+	Width    int              `json:"width"`
+}
+
+func (w widgetRequest) widget() domain.Widget {
+	return domain.Widget{
+		Title: w.Title, Question: w.Question, SQL: w.SQL,
+		Query: w.Query, Chart: w.Chart, Width: w.Width,
+	}
+}
+
+type createRequest struct {
+	Title       string          `json:"title"`
+	Description string          `json:"description"`
+	Widgets     []widgetRequest `json:"widgets"`
+}
+
+func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
+	var req createRequest
+	if err := request.Decode(r, &req); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	widgets := make([]domain.Widget, 0, len(req.Widgets))
+	for _, wr := range req.Widgets {
+		widgets = append(widgets, wr.widget())
+	}
+	dashboard, err := h.dashboards.Create(r.Context(), req.Title, req.Description, widgets)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusCreated, dashboard)
+}
+
+func (h *Handler) Rename(w http.ResponseWriter, r *http.Request) {
+	id, err := request.UUID(r, "id")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := request.Decode(r, &req); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if err := h.dashboards.Rename(r.Context(), id, req.Title); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusNoContent, nil)
+}
+
+func (h *Handler) AddWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := request.UUID(r, "id")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	var req widgetRequest
+	if err := request.Decode(r, &req); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	widget, err := h.dashboards.AddWidget(r.Context(), id, req.widget())
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusCreated, widget)
+}
+
+func (h *Handler) RemoveWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := request.UUID(r, "id")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	widgetID, err := request.UUID(r, "widget")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if err := h.dashboards.RemoveWidget(r.Context(), id, widgetID); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusNoContent, nil)
+}
+
 type Dashboards interface {
 	List(ctx context.Context, limit int) ([]domain.Dashboard, error)
 	Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.Dashboard, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	Create(ctx context.Context, title, description string, widgets []domain.Widget) (*domain.Dashboard, error)
+	Rename(ctx context.Context, id uuid.UUID, title string) error
+	AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error)
+	RemoveWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
 }
 
 func (h *Handler) Register(r chi.Router) {
 	r.Route("/dashboards", func(d chi.Router) {
 		d.Get("/", h.List)
+		d.Post("/", h.Create)
 		d.Get("/{id}", h.Get)
+		d.Patch("/{id}", h.Rename)
 		d.Delete("/{id}", h.Delete)
+		d.Post("/{id}/widgets", h.AddWidget)
+		d.Delete("/{id}/widgets/{widget}", h.RemoveWidget)
 	})
 }

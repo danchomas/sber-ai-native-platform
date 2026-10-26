@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -383,5 +385,42 @@ func TestPlanDashboardWithQueries(t *testing.T) {
 	}
 	if len(answer.Warnings) != 1 {
 		t.Fatalf("о пропущенном виджете нужно предупредить: %v", answer.Warnings)
+	}
+}
+
+func TestAgentEditsExistingDashboard(t *testing.T) {
+	existing := domain.Dashboard{
+		ID: uuid.New(), Title: "Продажи",
+		Widgets: []domain.Widget{{ID: uuid.New(), Title: "Старый график"}},
+	}
+	dashboards := &fakeDashboards{created: []domain.Dashboard{existing}}
+
+	model := newToolLLM(
+		calls(call("c1", toolDashboards, `{}`)),
+		calls(call("c2", toolAggregate, `{"dataset":"orders","group_by":["status"],"title":"Заказы по статусам"}`)),
+		calls(
+			call("c3", toolAddWidgets, fmt.Sprintf(`{"dashboard_id":%q,"widgets":[{"result_id":"r1","chart":{"type":"pie"}}]}`, existing.ID)),
+			call("c4", toolRemove, fmt.Sprintf(`{"dashboard_id":%q,"widget_id":%q}`, existing.ID, existing.Widgets[0].ID)),
+		),
+		calls(call("c5", toolAnswer, `{"text":"Заменил старый график на структуру заказов по статусам."}`)),
+	)
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, dashboards)
+
+	answer, err := svc.Ask(context.Background(), sessionID, "Замени на дашборде продаж старый график на заказы по статусам")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Intent != domain.IntentDashboard || answer.DashboardID == nil || *answer.DashboardID != existing.ID {
+		t.Fatalf("ответ должен вести на изменённый дашборд: %+v", answer)
+	}
+	if len(dashboards.added) != 1 || len(dashboards.added[0].Query) == 0 || dashboards.added[0].Chart.Type != domain.ChartTypePie {
+		t.Fatalf("добавленный виджет: %+v", dashboards.added)
+	}
+	if len(dashboards.removed) != 1 || dashboards.removed[0] != existing.Widgets[0].ID {
+		t.Fatalf("удалённый виджет: %v", dashboards.removed)
+	}
+	listed := model.requests[1].Messages
+	if last := listed[len(listed)-1]; !strings.Contains(last.Content, existing.Widgets[0].ID.String()) {
+		t.Fatalf("модель должна увидеть id виджетов: %s", last.Content)
 	}
 }

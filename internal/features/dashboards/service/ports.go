@@ -13,4 +13,8 @@ type DashboardRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (*domain.Dashboard, error)
 	List(ctx context.Context, limit int) ([]domain.Dashboard, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+
+	AddWidget(ctx context.Context, dashboardID uuid.UUID, w *domain.Widget) error
+	DeleteWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
+	Rename(ctx context.Context, id uuid.UUID, title string) error
 }

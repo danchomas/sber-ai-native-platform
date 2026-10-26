@@ -41,6 +41,9 @@ type Executor interface {
 
 type Dashboards interface {
 	CreateFromWidgets(ctx context.Context, sessionID *uuid.UUID, title, description string, widgets []domain.Widget) (*domain.Dashboard, error)
+	List(ctx context.Context, limit int) ([]domain.Dashboard, error)
+	AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error)
+	RemoveWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
 }
 
 type Service struct {
@@ -310,14 +313,15 @@ func (s *Service) queryAnswer(
 	spec := chart.Normalize(p.Chart.chartSpec(), execution.result, title)
 
 	answer := &domain.Answer{
-		Intent:    domain.IntentQuery,
-		SQL:       execution.sql,
-		Query:     execution.queryJSON(),
-		Result:    execution.result,
-		Chart:     &spec,
-		Datasets:  datasetNames(datasets, execution.tables),
-		Warnings:  execution.warnings,
-		Followups: p.Followups,
+		Intent:       domain.IntentQuery,
+		SQL:          execution.sql,
+		Query:        execution.queryJSON(),
+		Result:       execution.result,
+		Chart:        &spec,
+		Datasets:     datasetNames(datasets, execution.tables),
+		ChartOptions: chart.Options(spec, execution.result),
+		Warnings:     execution.warnings,
+		Followups:    p.Followups,
 	}
 	answer.Text = s.narrate(ctx, question, title, execution.result, execution.warnings)
 	return answer

@@ -44,18 +44,19 @@ type Message struct {
 }
 
 type Answer struct {
-	Intent      AnswerIntent    `json:"intent"`
-	Text        string          `json:"text"`
-	SQL         string          `json:"sql,omitempty"`
-	Query       json.RawMessage `json:"query,omitempty"`
-	Result      *ResultSet      `json:"result,omitempty"`
-	Chart       *ChartSpec      `json:"chart,omitempty"`
-	DashboardID *uuid.UUID      `json:"dashboard_id,omitempty"`
-	Datasets    []string        `json:"datasets,omitempty"`
-	Followups   []string        `json:"followups,omitempty"`
-	Warnings    []string        `json:"warnings,omitempty"`
-	Steps       []AgentStep     `json:"steps,omitempty"`
-	Elapsed     int64           `json:"elapsed_ms"`
+	Intent       AnswerIntent    `json:"intent"`
+	Text         string          `json:"text"`
+	SQL          string          `json:"sql,omitempty"`
+	Query        json.RawMessage `json:"query,omitempty"`
+	Result       *ResultSet      `json:"result,omitempty"`
+	Chart        *ChartSpec      `json:"chart,omitempty"`
+	ChartOptions []ChartSpec     `json:"chart_options,omitempty"`
+	DashboardID  *uuid.UUID      `json:"dashboard_id,omitempty"`
+	Datasets     []string        `json:"datasets,omitempty"`
+	Followups    []string        `json:"followups,omitempty"`
+	Warnings     []string        `json:"warnings,omitempty"`
+	Steps        []AgentStep     `json:"steps,omitempty"`
+	Elapsed      int64           `json:"elapsed_ms"`
 }
 
 // AgentStep — один вызов инструмента в цикле агента. Показывается

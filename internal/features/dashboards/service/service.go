@@ -165,6 +165,78 @@ func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int) (strin
 	return compiled.SQL, compiled.Args, nil
 }
 
+// Create собирает панель из виджетов, присланных интерфейсом: например,
+// из ответа в чате, закреплённого пользователем.
+func (s *Service) Create(ctx context.Context, title, description string, widgets []domain.Widget) (*domain.Dashboard, error) {
+	checked := make([]domain.Widget, 0, len(widgets))
+	for _, w := range widgets {
+		w, err := s.checkWidget(ctx, w)
+		if err != nil {
+			return nil, err
+		}
+		checked = append(checked, w)
+	}
+	return s.CreateFromWidgets(ctx, nil, title, description, checked)
+}
+
+// AddWidget дописывает виджет на существующую панель. Запрос виджета
+// проверяется сразу, а не при первом открытии: на панель не попадёт то,
+// что нельзя выполнить.
+func (s *Service) AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error) {
+	w, err := s.checkWidget(ctx, w)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.AddWidget(ctx, dashboardID, &w); err != nil {
+		return nil, err
+	}
+	s.log.InfoContext(ctx, "виджет добавлен на дашборд", "dashboard", dashboardID, "widget", w.ID)
+	return &w, nil
+}
+
+func (s *Service) RemoveWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error {
+	return s.repo.DeleteWidget(ctx, dashboardID, widgetID)
+}
+
+func (s *Service) Rename(ctx context.Context, id uuid.UUID, title string) error {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return apperr.NewValidationError("title", "у дашборда должен быть заголовок")
+	}
+	return s.repo.Rename(ctx, id, title)
+}
+
+func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widget, error) {
+	w.Title = strings.TrimSpace(w.Title)
+	if w.Title == "" {
+		return w, apperr.NewValidationError("title", "у виджета должен быть заголовок")
+	}
+	if len(w.Query) == 0 && strings.TrimSpace(w.SQL) == "" {
+		return w, apperr.NewValidationError("query", "у виджета нет запроса")
+	}
+
+	catalog, err := s.analyticsCatalog(ctx)
+	if err != nil {
+		return w, err
+	}
+	scopes, err := s.catalog.Scopes(ctx)
+	if err != nil {
+		return w, err
+	}
+	sql, _, err := widgetQuery(w, catalog, s.cfg.MaxRows)
+	if err != nil {
+		return w, err
+	}
+	if _, _, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows); err != nil {
+		return w, err
+	}
+	if len(w.Query) > 0 {
+		w.SQL = sql
+	}
+	w.ID, w.Result, w.Error = uuid.Nil, nil, ""
+	return w, nil
+}
+
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
 }
