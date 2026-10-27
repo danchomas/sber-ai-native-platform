@@ -1,5 +1,8 @@
 // Создание DOM-узлов без JSX.
 //
+// Только текстовые узлы и атрибуты: разметку строкой (innerHTML) хелпер
+// не принимает намеренно — в графики попадают значения из данных.
+//
 // Нужно движку графиков: он строит SVG напрямую, а не через React —
 // это 600 строк проверенной логики рисования, переписывать её на JSX
 // значило бы переписать и все её ошибки заново.
@@ -12,7 +15,6 @@ function h(tag, attrs, children) {
     if (v === null || v === undefined || v === false) continue;
     if (k === "class") node.className = v;
     else if (k === "text") node.textContent = v;
-    else if (k === "html") node.innerHTML = v;
     else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
     else if (k === "dataset") Object.assign(node.dataset, v);
     else node.setAttribute(k, v);
