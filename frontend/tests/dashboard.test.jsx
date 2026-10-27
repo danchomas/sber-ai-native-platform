@@ -7,6 +7,7 @@ import { PeriodBar } from "../src/features/dashboards/components/PeriodBar.jsx";
 import { Summary } from "../src/features/dashboards/components/Summary.jsx";
 import { Widget } from "../src/features/dashboards/components/Widget.jsx";
 import { PRESETS, presetRange } from "../src/features/dashboards/lib/period.js";
+import { AssistantMessage } from "../src/features/chat/components/Message.jsx";
 
 const trend = {
   id: "w1",
@@ -73,5 +74,20 @@ describe("дашборд", () => {
 
   it("без данных о периоде фильтр не показывается", () => {
     expect(renderToString(<PeriodBar range={null} period={null} onChange={() => {}} />)).toBe("");
+  });
+});
+
+describe("защита в ответе", () => {
+  it("пометка о сработавшей защите видна пользователю", () => {
+    const html = renderToString(
+      <AssistantMessage
+        answer={{ intent: "reject", text: "Не могу.", security: ["Вопрос не передавался языковой модели."] }}
+        theme="light"
+        onAsk={() => {}}
+        onOpenDashboard={() => {}}
+      />,
+    );
+    expect(html).toContain("notice security");
+    expect(html).toContain("Вопрос не передавался языковой модели.");
   });
 });

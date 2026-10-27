@@ -8,7 +8,7 @@ import { ErrorBanner } from "../../shared/ui/ErrorBanner.jsx";
 import "./styles.css";
 
 export function ChatPage({ active, theme, sessions, onOpenDashboard }) {
-  const { messages, busy, error, ask } = useChat(sessions.activeId, {
+  const { messages, busy, steps, error, ask } = useChat(sessions.activeId, {
     onAnswered: (answer) => {
       sessions.reload();
       if (answer?.dashboard_id) onOpenDashboard(answer.dashboard_id);
@@ -49,7 +49,7 @@ export function ChatPage({ active, theme, sessions, onOpenDashboard }) {
             ),
           )}
 
-          {busy ? <PendingMessage /> : null}
+          {busy ? <PendingMessage steps={steps} /> : null}
         </div>
       </div>
 

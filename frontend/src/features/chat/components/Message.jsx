@@ -3,6 +3,8 @@ import { useState } from "react";
 import { PinDialog } from "./PinDialog.jsx";
 import { Chart } from "../../../shared/charts/Chart.jsx";
 import { plural } from "../../../shared/lib/plural.js";
+import { Headline } from "../../../shared/ui/Headline.jsx";
+import { Icon } from "../../../shared/ui/Icon.jsx";
 
 const INTENT_LABELS = {
   overview: "описание данных",
@@ -14,6 +16,7 @@ const INTENT_LABELS = {
 };
 
 const ANALYSIS_LABELS = {
+  what_if: "сценарий «что если»",
   forecast: "прогноз",
   seasonality: "сезонность",
   correlation: "связь показателей",
@@ -45,14 +48,31 @@ export function UserMessage({ text }) {
   );
 }
 
-export function PendingMessage() {
+// PendingMessage — ответ, который ещё готовится: шаги агента приходят
+// потоком, и пользователь видит, что именно сейчас происходит.
+export function PendingMessage({ steps = [] }) {
   return (
     <div className="msg">
       <div className="who">AI</div>
       <div className="body">
-        <div className="card row">
-          <span className="spinner" />
-          <span className="muted">изучаю данные и считаю…</span>
+        <div className="card">
+          <div className="row">
+            <span className="spinner" />
+            <span className="muted" aria-live="polite">
+              {steps.length ? `${steps[steps.length - 1].title}…` : "изучаю вопрос…"}
+            </span>
+          </div>
+          {steps.length ? (
+            <ol className="live-steps">
+              {steps.map((s, i) => (
+                <li key={i} className={s.ok ? "ok" : "fail"}>
+                  <span className="step-mark" aria-hidden="true">{s.ok ? "✓" : "↻"}</span>
+                  <span className="step-title">{s.title}</span>
+                  {s.detail ? <span className="step-detail">{s.detail}</span> : null}
+                </li>
+              ))}
+            </ol>
+          ) : null}
         </div>
       </div>
     </div>
@@ -66,8 +86,9 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
   const options = answer?.chart_options || [];
   const [chart, setChart] = useState(answer?.chart);
   const [pinning, setPinning] = useState(false);
-  // Прогноз и другие расчёты поверх данных не пересчитать на дашборде.
-  const canPin = hasResult && !answer.analysis && (answer.query || answer.sql) && answer.intent === "query";
+  // На дашборд закрепляются только параметры запроса: виджет пересчитается
+  // при открытии. Прогноз и другие расчёты поверх данных не пересчитать.
+  const canPin = hasResult && !answer.analysis && answer.query && answer.intent === "query";
   const meta = [];
   if (answer) {
     meta.push(ANALYSIS_LABELS[answer.analysis] || INTENT_LABELS[answer.intent] || answer.intent);
@@ -84,12 +105,21 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
 
           {answer ? (
             <div className="answer-extras">
+              {(answer.security || []).map((note, i) => (
+                <div className="notice security" key={`s${i}`} role="status">
+                  <Icon name="shield" size={16} />
+                  <span>{note}</span>
+                </div>
+              ))}
+
               {(answer.warnings || []).map((w, i) => (
                 <div className="notice" key={i}>
                   <span>⚠</span>
                   <span>{w}</span>
                 </div>
               ))}
+
+              {hasResult && chart?.type !== "kpi" ? <Headline headline={answer.headline} compact /> : null}
 
               {hasResult ? <Chart spec={chart} result={answer.result} height={300} theme={theme} /> : null}
 
@@ -154,8 +184,7 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
         <PinDialog
           widget={{
             title: chart?.title || answer.text?.slice(0, 60) || "Показатель",
-            query: answer.query || undefined,
-            sql: answer.query ? "" : answer.sql,
+            query: answer.query,
             chart,
             width: chart?.type === "kpi" ? 3 : chart?.type === "line" || chart?.type === "area" ? 12 : 6,
           }}
