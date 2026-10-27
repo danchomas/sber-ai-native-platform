@@ -18,6 +18,8 @@ var (
 	ErrLLMUnavailable = errors.New("языковая модель недоступна")
 
 	ErrQueryTimeout = errors.New("превышено время выполнения запроса")
+
+	ErrBusy = errors.New("сервис занят обработкой других запросов")
 )
 
 type ValidationError struct {

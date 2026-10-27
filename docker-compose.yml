@@ -65,6 +65,8 @@ services:
       LLM_API_KEY: ${LLM_API_KEY?нужно объявить LLM_API_KEY, допустимо пустым}
       AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:?нужно задать AGENT_MAX_STEPS}
       AGENT_ALLOW_RAW_SQL: ${AGENT_ALLOW_RAW_SQL:?нужно задать AGENT_ALLOW_RAW_SQL}
+      AGENT_MAX_CONCURRENT: ${AGENT_MAX_CONCURRENT:?нужно задать AGENT_MAX_CONCURRENT}
+      AGENT_QUEUE_WAIT: ${AGENT_QUEUE_WAIT:?нужно задать AGENT_QUEUE_WAIT}
     ports:
       - "${API_PORT:?нужно задать API_PORT}:8080"
     depends_on:

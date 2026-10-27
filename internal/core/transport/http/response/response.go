@@ -74,6 +74,8 @@ func classify(err error) (status int, code, message string) {
 		return http.StatusConflict, "no_datasets", "В каталоге нет загруженных данных"
 	case errors.Is(err, apperr.ErrQueryTimeout):
 		return http.StatusGatewayTimeout, "query_timeout", "Запрос слишком тяжёлый и был остановлен по времени"
+	case errors.Is(err, apperr.ErrBusy):
+		return http.StatusTooManyRequests, "busy", "Ассистент занят другими вопросами. Повторите через минуту"
 	case errors.Is(err, apperr.ErrLLMUnavailable):
 		return http.StatusServiceUnavailable, "llm_unavailable", "Языковая модель недоступна"
 	case errors.Is(err, context.DeadlineExceeded):

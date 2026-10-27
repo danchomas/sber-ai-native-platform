@@ -85,6 +85,13 @@ type Agent struct {
 	// AllowRawSQL открывает модели инструмент run_sql. По умолчанию выключен:
 	// модель работает только типизированными инструментами и SQL не пишет.
 	AllowRawSQL bool
+	// MaxConcurrent — сколько вопросов агент обрабатывает одновременно.
+	// Локальная модель обслуживает запросы по очереди, и без предела
+	// один клиент мог бы занять её надолго.
+	MaxConcurrent int
+	// QueueWait — сколько вопрос ждёт свободного места, прежде чем
+	// пользователь получит «ассистент занят».
+	QueueWait time.Duration
 }
 
 func Load() (*Config, error) {
@@ -143,8 +150,10 @@ func Load() (*Config, error) {
 			HistoryDepth: integer("QUERY_HISTORY_DEPTH", 12),
 		},
 		Agent: Agent{
-			MaxSteps:    integer("AGENT_MAX_STEPS", 10),
-			AllowRawSQL: boolean("AGENT_ALLOW_RAW_SQL", false),
+			MaxSteps:      integer("AGENT_MAX_STEPS", 10),
+			AllowRawSQL:   boolean("AGENT_ALLOW_RAW_SQL", false),
+			MaxConcurrent: integer("AGENT_MAX_CONCURRENT", 4),
+			QueueWait:     duration("AGENT_QUEUE_WAIT", 30*time.Second),
 		},
 	}
 
@@ -182,6 +191,12 @@ func (c *Config) validate() error {
 	}
 	if c.Agent.MaxSteps < 1 || c.Agent.MaxSteps > 30 {
 		errs = append(errs, errors.New("AGENT_MAX_STEPS должен быть в диапазоне [1, 30]"))
+	}
+	if c.Agent.MaxConcurrent < 1 || c.Agent.MaxConcurrent > 64 {
+		errs = append(errs, errors.New("AGENT_MAX_CONCURRENT должен быть в диапазоне [1, 64]"))
+	}
+	if c.Agent.QueueWait < 0 {
+		errs = append(errs, errors.New("AGENT_QUEUE_WAIT не может быть отрицательным"))
 	}
 	if c.LLM.Enabled && c.LLM.BaseURL == "" {
 		errs = append(errs, errors.New("LLM_BASE_URL обязателен при LLM_ENABLED=true"))
