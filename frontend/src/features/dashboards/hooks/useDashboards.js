@@ -29,6 +29,8 @@ export function useDashboards({ openId, onCount } = {}) {
     reload();
   }, [reload]);
 
+  const [version, setVersion] = useState(0);
+
   useEffect(() => {
     if (!openId) {
       setCurrent(null);
@@ -44,7 +46,26 @@ export function useDashboards({ openId, onCount } = {}) {
     return () => {
       alive = false;
     };
-  }, [openId]);
+  }, [openId, version]);
+
+  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+
+  const removeWidget = useCallback(
+    async (dashboardId, widgetId) => {
+      await api.removeWidget(dashboardId, widgetId);
+      setCurrent((d) => (d && d.id === dashboardId ? { ...d, widgets: d.widgets.filter((w) => w.id !== widgetId) } : d));
+    },
+    [],
+  );
+
+  const rename = useCallback(
+    async (id, title) => {
+      await api.renameDashboard(id, title);
+      setCurrent((d) => (d && d.id === id ? { ...d, title } : d));
+      await reload();
+    },
+    [reload],
+  );
 
   const remove = useCallback(
     async (id) => {
@@ -54,5 +75,5 @@ export function useDashboards({ openId, onCount } = {}) {
     [reload],
   );
 
-  return { items, current, error, loading, reload, remove };
+  return { items, current, error, loading, reload, refresh, remove, removeWidget, rename };
 }

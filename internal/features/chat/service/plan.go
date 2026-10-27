@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
 )
 
 type plan struct {
-	Intent    string       `json:"intent"`
-	SQL       string       `json:"sql"`
-	Chart     *chartJSON   `json:"chart"`
-	Title     string       `json:"title"`
-	Message   string       `json:"message"`
-	Followups stringList   `json:"followups"`
-	Widgets   []widgetJSON `json:"widgets"`
+	Intent    string           `json:"intent"`
+	SQL       string           `json:"sql"`
+	Query     *analytics.Query `json:"query"`
+	Chart     *chartJSON       `json:"chart"`
+	Title     string           `json:"title"`
+	Message   string           `json:"message"`
+	Followups stringList       `json:"followups"`
+	Widgets   []widgetJSON     `json:"widgets"`
 }
 
 type chartJSON struct {
@@ -31,11 +33,12 @@ type chartJSON struct {
 }
 
 type widgetJSON struct {
-	Title    string     `json:"title"`
-	Question string     `json:"question"`
-	SQL      string     `json:"sql"`
-	Chart    *chartJSON `json:"chart"`
-	Width    int        `json:"width"`
+	Title    string           `json:"title"`
+	Question string           `json:"question"`
+	SQL      string           `json:"sql"`
+	Query    *analytics.Query `json:"query"`
+	Chart    *chartJSON       `json:"chart"`
+	Width    int              `json:"width"`
 }
 
 type stringList []string
@@ -94,7 +97,7 @@ func parsePlan(raw string) (*plan, error) {
 func (p *plan) intent() domain.AnswerIntent {
 	switch strings.ToLower(strings.TrimSpace(p.Intent)) {
 	case "query", "sql", "data_query":
-		if p.SQL != "" {
+		if p.hasQuery() {
 			return domain.IntentQuery
 		}
 		return domain.IntentClarify
@@ -104,7 +107,7 @@ func (p *plan) intent() domain.AnswerIntent {
 		if len(p.Widgets) > 0 {
 			return domain.IntentDashboard
 		}
-		if p.SQL != "" {
+		if p.hasQuery() {
 			return domain.IntentQuery
 		}
 		return domain.IntentClarify
@@ -118,13 +121,15 @@ func (p *plan) intent() domain.AnswerIntent {
 		switch {
 		case len(p.Widgets) > 0:
 			return domain.IntentDashboard
-		case p.SQL != "":
+		case p.hasQuery():
 			return domain.IntentQuery
 		default:
 			return domain.IntentClarify
 		}
 	}
 }
+
+func (p *plan) hasQuery() bool { return p.SQL != "" || p.Query != nil }
 
 func (c *chartJSON) chartSpec() *domain.ChartSpec {
 	if c == nil {

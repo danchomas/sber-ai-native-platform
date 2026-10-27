@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -38,7 +39,7 @@ func (l *scriptedLLM) Complete(_ context.Context, req domain.Completion) (string
 	case strings.Contains(req.System, "аналитический агент BI-платформы"):
 		l.calls["planner"]++
 		return pop(&l.planner)
-	case strings.Contains(req.System, "исправляешь SQL-запрос"):
+	case strings.Contains(req.System, "Ты исправляешь"):
 		l.calls["repair"]++
 		return pop(&l.repair)
 	case strings.Contains(req.System, "объясняет результат запроса"):
@@ -136,11 +137,13 @@ type fakeExecutor struct {
 	result   *domain.ResultSet
 	err      error
 	queries  []string
+	args     [][]any
 	failOnce error
 }
 
-func (e *fakeExecutor) Query(_ context.Context, _ domain.QueryTarget, sql string, _ int) (*domain.ResultSet, error) {
+func (e *fakeExecutor) Query(_ context.Context, _ domain.QueryTarget, sql string, _ int, args ...any) (*domain.ResultSet, error) {
 	e.queries = append(e.queries, sql)
+	e.args = append(e.args, args)
 	if e.failOnce != nil {
 		err := e.failOnce
 		e.failOnce = nil
@@ -223,7 +226,27 @@ func (m *memorySessions) LastTurns(_ context.Context, id uuid.UUID, _ int) ([]do
 
 type fakeDashboards struct {
 	created []domain.Dashboard
+	added   []domain.Widget
+	removed []uuid.UUID
 	err     error
+}
+
+func (d *fakeDashboards) List(context.Context, int) ([]domain.Dashboard, error) {
+	return d.created, d.err
+}
+
+func (d *fakeDashboards) AddWidget(_ context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+	w.ID, w.DashboardID = uuid.New(), dashboardID
+	d.added = append(d.added, w)
+	return &w, nil
+}
+
+func (d *fakeDashboards) RemoveWidget(_ context.Context, _ uuid.UUID, widgetID uuid.UUID) error {
+	d.removed = append(d.removed, widgetID)
+	return d.err
 }
 
 func (d *fakeDashboards) CreateFromWidgets(
@@ -239,3 +262,60 @@ func (d *fakeDashboards) CreateFromWidgets(
 	d.created = append(d.created, dash)
 	return &dash, nil
 }
+
+// toolLLM — модель с function calling: на каждый ход разговора отдаёт
+// следующий заготовленный ответ и запоминает, что ей прислали.
+type toolLLM struct {
+	*scriptedLLM
+	mu       sync.Mutex
+	replies  []domain.Reply
+	err      error
+	requests []domain.Completion
+}
+
+func newToolLLM(replies ...domain.Reply) *toolLLM {
+	return &toolLLM{scriptedLLM: newScriptedLLM(), replies: replies}
+}
+
+func (l *toolLLM) Converse(_ context.Context, req domain.Completion) (domain.Reply, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.requests = append(l.requests, req)
+	if l.err != nil {
+		return domain.Reply{}, l.err
+	}
+	if len(l.replies) == 0 {
+		return domain.Reply{}, errors.New("сценарий исчерпан")
+	}
+	head := l.replies[0]
+	l.replies = l.replies[1:]
+	return head, nil
+}
+
+func (l *toolLLM) conversations() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.requests)
+}
+
+// toolMessages возвращает ответы инструментов из последнего запроса к модели.
+func (l *toolLLM) toolMessages() []domain.ChatMessage {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.requests) == 0 {
+		return nil
+	}
+	var out []domain.ChatMessage
+	for _, m := range l.requests[len(l.requests)-1].Messages {
+		if m.Role == domain.RoleTool {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func call(id, name, args string) domain.ToolCall {
+	return domain.ToolCall{ID: id, Name: name, Arguments: json.RawMessage(args)}
+}
+
+func calls(c ...domain.ToolCall) domain.Reply { return domain.Reply{ToolCalls: c} }

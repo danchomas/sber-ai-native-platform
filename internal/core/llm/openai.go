@@ -18,6 +18,10 @@ import (
 
 const maxListedInError = 8
 
+// ErrToolsUnsupported — сервер или модель не умеют function calling.
+// Агент в этом случае переходит на разбор ответа в JSON-режиме.
+var ErrToolsUnsupported = errors.New("модель не поддерживает вызов инструментов")
+
 type Client struct {
 	http        *http.Client
 	baseURL     string
@@ -66,6 +70,7 @@ type chatRequest struct {
 	MaxTokens      int               `json:"max_tokens,omitempty"`
 	Stream         bool              `json:"stream"`
 	ResponseFormat *responseFormat   `json:"response_format,omitempty"`
+	Tools          []toolJSON        `json:"tools,omitempty"`
 }
 
 type responseFormat struct {
@@ -73,14 +78,37 @@ type responseFormat struct {
 }
 
 type chatMessageJSON struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []toolCallJSON `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+}
+
+type toolJSON struct {
+	Type     string           `json:"type"`
+	Function toolFunctionJSON `json:"function"`
+}
+
+type toolFunctionJSON struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+type toolCallJSON struct {
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type"`
+	Function struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	} `json:"function"`
 }
 
 type chatResponse struct {
 	Choices []struct {
 		Message struct {
-			Content string `json:"content"`
+			Content   *string        `json:"content"`
+			ToolCalls []toolCallJSON `json:"tool_calls"`
 		} `json:"message"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -91,12 +119,61 @@ type chatResponse struct {
 }
 
 func (c *Client) Complete(ctx context.Context, req domain.Completion) (string, error) {
+	req.Tools = nil
+	reply, err := c.Converse(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	return reply.Content, nil
+}
+
+// Converse — один ход разговора с инструментами по протоколу function calling
+// OpenAI. Его понимают Ollama, vLLM, llama.cpp (с --jinja) и OpenRouter.
+func (c *Client) Converse(ctx context.Context, req domain.Completion) (domain.Reply, error) {
+	body, err := json.Marshal(c.buildRequest(req))
+	if err != nil {
+		return domain.Reply{}, fmt.Errorf("сериализация запроса к модели: %w", err)
+	}
+
+	var lastErr error
+	for attempt := 0; attempt <= c.retries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(attempt) * 500 * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return domain.Reply{}, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		reply, retryable, err := c.do(ctx, body)
+		if err == nil {
+			return reply, nil
+		}
+		lastErr = err
+		if !retryable || ctx.Err() != nil {
+			break
+		}
+	}
+	return domain.Reply{}, fmt.Errorf("%w: %w", apperr.ErrLLMUnavailable, lastErr)
+}
+
+func (c *Client) buildRequest(req domain.Completion) chatRequest {
 	messages := make([]chatMessageJSON, 0, len(req.Messages)+1)
 	if req.System != "" {
 		messages = append(messages, chatMessageJSON{Role: "system", Content: req.System})
 	}
 	for _, m := range req.Messages {
-		messages = append(messages, chatMessageJSON{Role: string(m.Role), Content: m.Content})
+		msg := chatMessageJSON{Role: string(m.Role), Content: m.Content, ToolCallID: m.ToolCallID}
+		for _, call := range m.ToolCalls {
+			tc := toolCallJSON{ID: call.ID, Type: "function"}
+			tc.Function.Name = call.Name
+			// В протоколе OpenAI аргументы — JSON, упакованный в строку.
+			encoded, _ := json.Marshal(string(argumentsOrEmpty(call.Arguments)))
+			tc.Function.Arguments = encoded
+			msg.ToolCalls = append(msg.ToolCalls, tc)
+		}
+		messages = append(messages, msg)
 	}
 
 	temperature := req.Temperature
@@ -114,75 +191,94 @@ func (c *Client) Complete(ctx context.Context, req domain.Completion) (string, e
 		Temperature: temperature,
 		MaxTokens:   maxTokens,
 	}
-	if req.JSONOnly {
+	for _, t := range req.Tools {
+		payload.Tools = append(payload.Tools, toolJSON{
+			Type: "function",
+			Function: toolFunctionJSON{
+				Name: t.Name, Description: t.Description, Parameters: t.Parameters,
+			},
+		})
+	}
+	if req.JSONOnly && len(req.Tools) == 0 {
 		payload.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("сериализация запроса к модели: %w", err)
-	}
-
-	var lastErr error
-	for attempt := 0; attempt <= c.retries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(attempt) * 500 * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return "", ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
-		text, retryable, err := c.do(ctx, body)
-		if err == nil {
-			return text, nil
-		}
-		lastErr = err
-		if !retryable || ctx.Err() != nil {
-			break
-		}
-	}
-	return "", fmt.Errorf("%w: %v", apperr.ErrLLMUnavailable, lastErr)
+	return payload
 }
 
-func (c *Client) do(ctx context.Context, body []byte) (text string, retryable bool, err error) {
+func (c *Client) do(ctx context.Context, body []byte) (reply domain.Reply, retryable bool, err error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return "", false, err
+		return domain.Reply{}, false, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	c.setHeaders(httpReq)
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return "", true, err
+		return domain.Reply{}, true, err
 	}
 	defer resp.Body.Close()
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return "", true, err
+		return domain.Reply{}, true, err
 	}
 	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-		return "", true, fmt.Errorf("модель ответила %s: %s", resp.Status, snippet(raw))
+		return domain.Reply{}, true, fmt.Errorf("модель ответила %s: %s", resp.Status, snippet(raw))
+	}
+	if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(string(raw)), "tool") {
+		return domain.Reply{}, false, fmt.Errorf("%w: %s", ErrToolsUnsupported, snippet(raw))
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", false, fmt.Errorf("модель ответила %s: %s", resp.Status, snippet(raw))
+		return domain.Reply{}, false, fmt.Errorf("модель ответила %s: %s", resp.Status, snippet(raw))
 	}
 
 	var parsed chatResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", false, fmt.Errorf("разбор ответа модели: %w", err)
+		return domain.Reply{}, false, fmt.Errorf("разбор ответа модели: %w", err)
 	}
 	if parsed.Error != nil {
-		return "", false, errors.New(parsed.Error.Message)
+		return domain.Reply{}, false, errors.New(parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", true, errors.New("модель вернула пустой ответ")
+		return domain.Reply{}, true, errors.New("модель вернула пустой ответ")
 	}
-	return parsed.Choices[0].Message.Content, false, nil
+
+	msg := parsed.Choices[0].Message
+	if msg.Content != nil {
+		reply.Content = *msg.Content
+	}
+	for i, tc := range msg.ToolCalls {
+		id := tc.ID
+		if id == "" {
+			id = fmt.Sprintf("call_%d", i)
+		}
+		reply.ToolCalls = append(reply.ToolCalls, domain.ToolCall{
+			ID: id, Name: tc.Function.Name, Arguments: decodeArguments(tc.Function.Arguments),
+		})
+	}
+	return reply, false, nil
+}
+
+// decodeArguments принимает оба варианта, встречающиеся у серверов:
+// аргументы строкой с JSON внутри (OpenAI, vLLM) и сразу объектом.
+func decodeArguments(raw json.RawMessage) json.RawMessage {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err == nil {
+			trimmed = []byte(strings.TrimSpace(s))
+		}
+	}
+	return argumentsOrEmpty(trimmed)
+}
+
+func argumentsOrEmpty(raw json.RawMessage) json.RawMessage {
+	if len(bytes.TrimSpace(raw)) == 0 || string(bytes.TrimSpace(raw)) == "null" {
+		return json.RawMessage("{}")
+	}
+	return raw
 }
 
 func (c *Client) Ping(ctx context.Context) error {

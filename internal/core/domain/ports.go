@@ -19,7 +19,7 @@ type RawDataRepository interface {
 
 	ValueOverlap(ctx context.Context, left, right TableRef) (share float64, matched int64, err error)
 
-	Query(ctx context.Context, target QueryTarget, sql string, maxRows int) (*ResultSet, error)
+	Query(ctx context.Context, target QueryTarget, sql string, maxRows int, args ...any) (*ResultSet, error)
 
 	ExplainCost(ctx context.Context, target QueryTarget, sql string) (float64, error)
 }

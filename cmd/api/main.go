@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
@@ -28,6 +30,7 @@ import (
 	datapg "github.com/heinousness/aibi/internal/features/datasets/repository/postgres"
 	datasvc "github.com/heinousness/aibi/internal/features/datasets/service"
 	datahttp "github.com/heinousness/aibi/internal/features/datasets/transport/http"
+	mcphttp "github.com/heinousness/aibi/internal/features/mcp/transport/http"
 	provpg "github.com/heinousness/aibi/internal/features/providers/repository/postgres"
 	provsvc "github.com/heinousness/aibi/internal/features/providers/service"
 	provhttp "github.com/heinousness/aibi/internal/features/providers/transport/http"
@@ -82,6 +85,17 @@ func run() error {
 	defer registry.Close()
 
 	rawRepo := corepg.NewRawDataRepository(registry, cfg.Postgres.RawSchema, cfg.Query.Timeout)
+	if cfg.Postgres.ReaderRole != "" {
+		reader, err := newReaderPool(ctx, pool, cfg)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		rawRepo.WithReader(reader)
+		log.Info("аналитические запросы выполняются от роли только для чтения", "role", cfg.Postgres.ReaderRole)
+	} else {
+		log.Warn("PG_READER_ROLE не задан: аналитические запросы выполняются от владельца базы")
+	}
 
 	providers := provsvc.New(providerRepo, newModel(ctx, cfg, log), cfg.LLM, log)
 	providers.Restore(ctx)
@@ -91,7 +105,7 @@ func run() error {
 	sources := srcsvc.New(sourceRepo, datasetRepo, rawRepo,
 		srcpg.NewIntrospector(registry), datasets, registry.Forget, log)
 	dashboards := dashsvc.New(dashboardRepo, datasets, rawRepo, cfg.Query, log)
-	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, providers, cfg.Query, log)
+	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, providers, cfg.Query, cfg.Agent, log)
 
 	router := corehttp.NewRouter(corehttp.RouterOptions{
 		Config: cfg,
@@ -104,6 +118,7 @@ func run() error {
 			chathttp.New(chat),
 			dashhttp.New(dashboards),
 			queryhttp.New(datasets, rawRepo, cfg.Query),
+			mcphttp.New(chat, version),
 		},
 	})
 
@@ -113,6 +128,25 @@ func run() error {
 	}
 	log.Info("платформа остановлена")
 	return nil
+}
+
+func newReaderPool(ctx context.Context, owner *pgxpool.Pool, cfg *config.Config) (*pgxpool.Pool, error) {
+	password, err := corepg.EnsureReaderRole(ctx, owner,
+		cfg.Postgres.ReaderRole, cfg.Postgres.RawSchema, cfg.Query.Timeout)
+	if err != nil {
+		return nil, fmt.Errorf("%w (чтобы запускаться без неё, оставьте PG_READER_ROLE пустым)", err)
+	}
+
+	opts := pgpool.PoolOptionsFromConfig(cfg.Postgres)
+	opts.User, opts.Password = cfg.Postgres.ReaderRole, password
+	opts.AppName = "aibi-reader"
+	opts.MaxConns = max(cfg.Postgres.MaxConns/2, 2)
+	opts.MinConns = 0
+	reader, err := pgpool.NewPool(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("подключение ролью чтения %q: %w", cfg.Postgres.ReaderRole, err)
+	}
+	return reader, nil
 }
 
 func newModel(ctx context.Context, cfg *config.Config, log *slog.Logger) domain.LLM {

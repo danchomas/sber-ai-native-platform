@@ -1,4 +1,8 @@
+import { useState } from "react";
+
+import { PinDialog } from "./PinDialog.jsx";
 import { Chart } from "../../../shared/charts/Chart.jsx";
+import { plural } from "../../../shared/lib/plural.js";
 
 const INTENT_LABELS = {
   overview: "описание данных",
@@ -7,6 +11,27 @@ const INTENT_LABELS = {
   clarify: "уточнение",
   reject: "отказ",
   smalltalk: "о платформе",
+};
+
+const ANALYSIS_LABELS = {
+  forecast: "прогноз",
+  seasonality: "сезонность",
+  correlation: "связь показателей",
+  anomalies: "выбросы",
+};
+
+const CHART_LABELS = {
+  kpi: "Число",
+  bar: "Столбцы",
+  hbar: "Полосы",
+  line: "Линия",
+  area: "Область",
+  pie: "Круг",
+  donut: "Кольцо",
+  scatter: "Точки",
+  histogram: "Распределение",
+  heatmap: "Тепловая карта",
+  table: "Таблица",
 };
 
 export function UserMessage({ text }) {
@@ -27,7 +52,7 @@ export function PendingMessage() {
       <div className="body">
         <div className="card row">
           <span className="spinner" />
-          <span className="muted">думаю над вопросом…</span>
+          <span className="muted">изучаю данные и считаю…</span>
         </div>
       </div>
     </div>
@@ -38,9 +63,14 @@ export function PendingMessage() {
 // визуализацию, ссылку на дашборд, продолжения и SQL под катом.
 export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDashboard }) {
   const hasResult = answer?.result?.columns?.length > 0;
+  const options = answer?.chart_options || [];
+  const [chart, setChart] = useState(answer?.chart);
+  const [pinning, setPinning] = useState(false);
+  // Прогноз и другие расчёты поверх данных не пересчитать на дашборде.
+  const canPin = hasResult && !answer.analysis && (answer.query || answer.sql) && answer.intent === "query";
   const meta = [];
   if (answer) {
-    meta.push(INTENT_LABELS[answer.intent] || answer.intent);
+    meta.push(ANALYSIS_LABELS[answer.analysis] || INTENT_LABELS[answer.intent] || answer.intent);
     if (answer.datasets?.length) meta.push(answer.datasets.join(", "));
     if (answer.elapsed_ms) meta.push(`${(answer.elapsed_ms / 1000).toFixed(1)} с`);
   }
@@ -61,8 +91,30 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
                 </div>
               ))}
 
-              {hasResult ? (
-                <Chart spec={answer.chart} result={answer.result} height={300} theme={theme} />
+              {hasResult ? <Chart spec={chart} result={answer.result} height={300} theme={theme} /> : null}
+
+              {hasResult && (options.length > 1 || canPin) ? (
+                <div className="answer-tools">
+                  {options.length > 1 ? (
+                    <div className="chips view-switch" role="group" aria-label="Вид графика">
+                      {options.map((o) => (
+                        <button
+                          key={o.type}
+                          className={`chip${chart?.type === o.type ? " active" : ""}`}
+                          aria-pressed={chart?.type === o.type}
+                          onClick={() => setChart(o)}
+                        >
+                          {CHART_LABELS[o.type] || o.type}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {canPin ? (
+                    <button className="icon-btn" onClick={() => setPinning(true)}>
+                      Закрепить на дашборде
+                    </button>
+                  ) : null}
+                </div>
               ) : null}
 
               {answer.dashboard_id ? (
@@ -83,6 +135,8 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
                 </div>
               ) : null}
 
+              {answer.steps?.length ? <AgentSteps steps={answer.steps} /> : null}
+
               {answer.sql ? (
                 <details className="sql">
                   <summary>Как это посчитано (SQL)</summary>
@@ -95,6 +149,48 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
 
         {meta.length ? <div className="meta">{meta.join(" · ")}</div> : null}
       </div>
+
+      {pinning ? (
+        <PinDialog
+          widget={{
+            title: chart?.title || answer.text?.slice(0, 60) || "Показатель",
+            query: answer.query || undefined,
+            sql: answer.query ? "" : answer.sql,
+            chart,
+            width: chart?.type === "kpi" ? 3 : chart?.type === "line" || chart?.type === "area" ? 12 : 6,
+          }}
+          onClose={() => setPinning(false)}
+          onPinned={onOpenDashboard}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// AgentSteps показывает, как агент шёл к ответу: какие инструменты вызвал,
+// где ошибся и исправился. Это и объяснение ответа, и аргумент доверия:
+// видно, что модель работала только через инструменты платформы.
+function AgentSteps({ steps }) {
+  const failed = steps.filter((s) => !s.ok).length;
+  return (
+    <details className="sql steps">
+      <summary>
+        {`Ход работы: ${steps.length} ${plural(steps.length, "шаг", "шага", "шагов")}` +
+          (failed ? ` · исправлено ошибок: ${failed}` : "")}
+      </summary>
+      <ol>
+        {steps.map((s, i) => (
+          <li key={i} className={s.ok ? "ok" : "fail"}>
+            <span className="step-mark" aria-hidden="true">{s.ok ? "✓" : "↻"}</span>
+            <span className="step-title">{s.title}</span>
+            <span className="step-meta">
+              {s.ok && s.rows ? `${s.rows} ${plural(s.rows, "строка", "строки", "строк")} · ` : ""}
+              {(s.elapsed_ms / 1000).toFixed(1)} с
+            </span>
+            {s.detail ? <div className="step-detail">{s.detail}</div> : null}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }

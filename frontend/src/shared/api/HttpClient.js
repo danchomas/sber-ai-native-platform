@@ -46,6 +46,7 @@ export class HttpClient {
 
   get(path, opts) { return this.request("GET", path, opts); }
   post(path, body, opts) { return this.request("POST", path, { ...opts, body }); }
+  patch(path, body, opts) { return this.request("PATCH", path, { ...opts, body }); }
   del(path, opts) { return this.request("DELETE", path, opts); }
   upload(path, form, opts) { return this.request("POST", path, { ...opts, form }); }
 }

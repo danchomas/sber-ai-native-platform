@@ -2,18 +2,22 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
+	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/llm"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
@@ -32,11 +36,14 @@ type Models interface {
 }
 
 type Executor interface {
-	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int) (*domain.ResultSet, error)
+	Query(ctx context.Context, target domain.QueryTarget, sql string, maxRows int, args ...any) (*domain.ResultSet, error)
 }
 
 type Dashboards interface {
 	CreateFromWidgets(ctx context.Context, sessionID *uuid.UUID, title, description string, widgets []domain.Widget) (*domain.Dashboard, error)
+	List(ctx context.Context, limit int) ([]domain.Dashboard, error)
+	AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error)
+	RemoveWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
 }
 
 type Service struct {
@@ -46,7 +53,12 @@ type Service struct {
 	dashboards Dashboards
 	models     Models
 	cfg        config.Query
+	agent      config.Agent
 	log        *slog.Logger
+
+	// noTools помнит модели, которые отказали в function calling, чтобы
+	// не тратить на них лишний запрос перед каждым вопросом.
+	noTools sync.Map
 }
 
 func New(
@@ -56,11 +68,12 @@ func New(
 	dashboards Dashboards,
 	models Models,
 	cfg config.Query,
+	agent config.Agent,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		catalog: catalog, exec: exec, sessions: sessions,
-		dashboards: dashboards, models: models, cfg: cfg, log: log,
+		dashboards: dashboards, models: models, cfg: cfg, agent: agent, log: log,
 	}
 }
 
@@ -119,13 +132,32 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 	if err != nil {
 		s.log.WarnContext(ctx, "связи каталога недоступны", "error", err)
 	}
-	schemaContext := buildSchemaContext(s.catalog.Schema(), datasets, relations)
-
 	turns, err := s.sessions.LastTurns(ctx, sessionID, s.cfg.HistoryDepth)
 	if err != nil {
 		s.log.WarnContext(ctx, "история диалога недоступна", "error", err)
 	}
 
+	model := s.models.Current(ctx)
+	if caller, ok := model.(ToolCaller); ok {
+		if _, unsupported := s.noTools.Load(model.Model()); !unsupported {
+			answer, err := s.runAgent(ctx, caller, sessionID, question, datasets, relations, turns)
+			if err == nil {
+				return answer
+			}
+			if !errors.Is(err, llm.ErrToolsUnsupported) {
+				s.log.WarnContext(ctx, "цикл агента не запущен", "error", err)
+				answer := s.overviewAnswer(ctx, datasets, relations, question)
+				answer.Warnings = append(answer.Warnings,
+					"Языковая модель недоступна, поэтому показано описание данных по профилю каталога.")
+				return answer
+			}
+			s.noTools.Store(model.Model(), struct{}{})
+			s.log.WarnContext(ctx, "модель не поддерживает инструменты, агент отвечает по плану в JSON",
+				"model", model.Model())
+		}
+	}
+
+	schemaContext := s.planContext(datasets, relations)
 	plan, err := s.plan(ctx, schemaContext, turns, question)
 	if err != nil {
 
@@ -141,10 +173,10 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 		return s.overviewAnswer(ctx, datasets, relations, question)
 
 	case domain.IntentQuery:
-		return s.queryAnswer(ctx, schemaContext, datasets, question, plan)
+		return s.queryAnswer(ctx, schemaContext, datasets, relations, question, plan)
 
 	case domain.IntentDashboard:
-		return s.dashboardAnswer(ctx, sessionID, schemaContext, datasets, question, plan)
+		return s.dashboardAnswer(ctx, sessionID, schemaContext, datasets, relations, question, plan)
 
 	case domain.IntentReject:
 		text := plan.Message
@@ -176,7 +208,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: question})
 
 	raw, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
-		System:   buildPlannerPrompt(schemaContext),
+		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL),
 		Messages: messages,
 		JSONOnly: true,
 	})
@@ -195,7 +227,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 		Content: "Верни ответ строго одним JSON-объектом по описанному формату, без текста вокруг.",
 	})
 	raw, err = s.models.Current(ctx).Complete(ctx, domain.Completion{
-		System:   buildPlannerPrompt(schemaContext),
+		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL),
 		Messages: messages,
 		JSONOnly: true,
 	})
@@ -247,6 +279,7 @@ func (s *Service) queryAnswer(
 	ctx context.Context,
 	schemaContext string,
 	datasets []domain.Dataset,
+	relations []domain.Relation,
 	question string,
 	p *plan,
 ) *domain.Answer {
@@ -255,7 +288,8 @@ func (s *Service) queryAnswer(
 		return failure("Не удалось подготовить проверку запроса. Повторите вопрос.", err)
 	}
 
-	execution, err := s.runQuery(ctx, schemaContext, question, p.SQL, scopes)
+	execution, err := s.runQuery(ctx, schemaContext, question,
+		candidate{sql: p.SQL, query: p.Query}, scopes, s.analyticsCatalog(datasets, relations))
 	if err != nil {
 		if errors.Is(err, apperr.ErrQueryTimeout) {
 			return &domain.Answer{
@@ -279,13 +313,15 @@ func (s *Service) queryAnswer(
 	spec := chart.Normalize(p.Chart.chartSpec(), execution.result, title)
 
 	answer := &domain.Answer{
-		Intent:    domain.IntentQuery,
-		SQL:       execution.sql,
-		Result:    execution.result,
-		Chart:     &spec,
-		Datasets:  datasetNames(datasets, execution.tables),
-		Warnings:  execution.warnings,
-		Followups: p.Followups,
+		Intent:       domain.IntentQuery,
+		SQL:          execution.sql,
+		Query:        execution.queryJSON(),
+		Result:       execution.result,
+		Chart:        &spec,
+		Datasets:     datasetNames(datasets, execution.tables),
+		ChartOptions: chart.Options(spec, execution.result),
+		Warnings:     execution.warnings,
+		Followups:    p.Followups,
 	}
 	answer.Text = s.narrate(ctx, question, title, execution.result, execution.warnings)
 	return answer
@@ -296,6 +332,7 @@ func (s *Service) dashboardAnswer(
 	sessionID uuid.UUID,
 	schemaContext string,
 	datasets []domain.Dataset,
+	relations []domain.Relation,
 	question string,
 	p *plan,
 ) *domain.Answer {
@@ -303,6 +340,7 @@ func (s *Service) dashboardAnswer(
 	if err != nil {
 		return failure("Не удалось подготовить проверку запросов дашборда.", err)
 	}
+	catalog := s.analyticsCatalog(datasets, relations)
 
 	var (
 		widgets  []domain.Widget
@@ -311,10 +349,11 @@ func (s *Service) dashboardAnswer(
 	)
 
 	for i, w := range p.Widgets {
-		if strings.TrimSpace(w.SQL) == "" {
+		if strings.TrimSpace(w.SQL) == "" && w.Query == nil {
 			continue
 		}
-		execution, err := s.runQuery(ctx, schemaContext, orDefault(w.Question, question), w.SQL, scopes)
+		execution, err := s.runQuery(ctx, schemaContext, orDefault(w.Question, question),
+			candidate{sql: w.SQL, query: w.Query}, scopes, catalog)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("Виджет «%s» не построен: %s",
 				orDefault(w.Title, fmt.Sprintf("№%d", i+1)), humanReason(err)))
@@ -332,6 +371,7 @@ func (s *Service) dashboardAnswer(
 			Title:    title,
 			Question: w.Question,
 			SQL:      execution.sql,
+			Query:    execution.queryJSON(),
 			Chart:    spec,
 			Width:    width,
 			Result:   execution.result,
@@ -374,27 +414,93 @@ func (s *Service) dashboardAnswer(
 
 type execution struct {
 	sql      string
+	query    *analytics.Query
 	result   *domain.ResultSet
 	tables   []string
 	scope    domain.Scope
 	warnings []string
 }
 
+func (e *execution) queryJSON() json.RawMessage {
+	if e.query == nil {
+		return nil
+	}
+	out, err := json.Marshal(e.query)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+// candidate — то, что предложила модель: параметры запроса или, если
+// разрешён свободный SQL, текст запроса.
+type candidate struct {
+	sql   string
+	query *analytics.Query
+}
+
+func (c candidate) String() string {
+	if c.query != nil {
+		out, _ := json.Marshal(c.query)
+		return string(out)
+	}
+	return c.sql
+}
+
+func (s *Service) planContext(datasets []domain.Dataset, relations []domain.Relation) string {
+	if s.agent.AllowRawSQL {
+		return buildSchemaContext(s.catalog.Schema(), datasets, relations)
+	}
+	return buildToolContext(datasets, relations)
+}
+
+func (s *Service) analyticsCatalog(datasets []domain.Dataset, relations []domain.Relation) analytics.Catalog {
+	return analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()}
+}
+
+// compile превращает предложение модели в SQL с параметрами. Свободный
+// SQL принимается, только если он явно разрешён.
+func (s *Service) compile(c candidate, catalog analytics.Catalog) (string, []any, []string, error) {
+	if c.query != nil {
+		compiled, err := analytics.Compile(*c.query, catalog, s.cfg.MaxRows)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return compiled.SQL, compiled.Args, compiled.Warnings, nil
+	}
+	if strings.TrimSpace(c.sql) == "" {
+		return "", nil, nil, errors.New("в плане нет параметров запроса query")
+	}
+	if !s.agent.AllowRawSQL {
+		return "", nil, nil, fmt.Errorf("%w: SQL от модели не принимается, опиши запрос параметрами query",
+			apperr.ErrUnsafeQuery)
+	}
+	return c.sql, nil, nil, nil
+}
+
 func (s *Service) runQuery(
 	ctx context.Context,
-	schemaContext, question, sql string,
+	schemaContext, question string,
+	c candidate,
 	scopes []domain.Scope,
+	catalog analytics.Catalog,
 ) (*execution, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= s.cfg.MaxRepairs; attempt++ {
 		if attempt > 0 {
-			repaired, err := s.repair(ctx, schemaContext, question, sql, lastErr)
+			repaired, err := s.repair(ctx, schemaContext, question, c, lastErr)
 			if err != nil {
 				return nil, lastErr
 			}
-			sql = repaired
-			s.log.DebugContext(ctx, "SQL переписан после ошибки", "attempt", attempt)
+			c = repaired
+			s.log.DebugContext(ctx, "запрос переписан после ошибки", "attempt", attempt)
+		}
+
+		sql, args, compileWarnings, err := s.compile(c, catalog)
+		if err != nil {
+			lastErr = err
+			continue
 		}
 
 		scope, checked, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows)
@@ -403,7 +509,7 @@ func (s *Service) runQuery(
 			continue
 		}
 
-		result, err := s.exec.Query(ctx, scope.Target, checked.SQL, s.cfg.MaxRows)
+		result, err := s.exec.Query(ctx, scope.Target, checked.SQL, s.cfg.MaxRows, args...)
 		if err != nil {
 			if errors.Is(err, apperr.ErrQueryTimeout) || ctx.Err() != nil {
 				return nil, err
@@ -412,40 +518,44 @@ func (s *Service) runQuery(
 			continue
 		}
 
-		warnings := checked.Warnings
+		warnings := append(compileWarnings, checked.Warnings...)
 		if result.Truncated {
 			warnings = append(warnings,
 				fmt.Sprintf("Показаны первые %d строк результата.", len(result.Rows)))
 		}
 		return &execution{
-			sql: sql, result: result, tables: checked.Tables,
+			sql: sql, query: c.query, result: result, tables: checked.Tables,
 			scope: scope, warnings: warnings,
 		}, nil
 	}
 	return nil, lastErr
 }
 
-func (s *Service) repair(ctx context.Context, schemaContext, question, badSQL string, cause error) (string, error) {
+func (s *Service) repair(ctx context.Context, schemaContext, question string, bad candidate, cause error) (candidate, error) {
+	system := repairSystemPrompt
+	if !s.agent.AllowRawSQL {
+		system = repairQuerySystemPrompt
+	}
 	raw, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
-		System: repairSystemPrompt,
+		System: system,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
-			Content: buildRepairPrompt(schemaContext, question, badSQL, humanReason(cause)),
+			Content: buildRepairPrompt(schemaContext, question, bad.String(), humanReason(cause)),
 		}},
 		JSONOnly: true,
 	})
 	if err != nil {
-		return "", err
+		return candidate{}, err
 	}
 
 	p, err := parsePlan(raw)
 	if err != nil {
-		return "", err
+		return candidate{}, err
 	}
-	if p.SQL == "" {
-		return "", errors.New("модель не предложила исправленный запрос")
+	if p.SQL == "" && p.Query == nil {
+		return candidate{}, errors.New("модель не предложила исправленный запрос")
 	}
-	return p.SQL, nil
+	return candidate{sql: p.SQL, query: p.Query}, nil
 }
 
 func (s *Service) narrate(ctx context.Context, question, title string, rs *domain.ResultSet, warnings []string) string {
@@ -499,6 +609,7 @@ func humanReason(err error) string {
 		msg = strings.TrimSpace(msg[i+len("ERROR:"):])
 	}
 	msg = strings.TrimPrefix(msg, apperr.ErrUnsafeQuery.Error()+": ")
+	msg = strings.TrimPrefix(msg, apperr.ErrValidation.Error()+": ")
 	if len(msg) > 300 {
 		msg = msg[:300] + "…"
 	}
