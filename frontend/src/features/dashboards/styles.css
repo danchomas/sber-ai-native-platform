@@ -1,7 +1,66 @@
 /* Панели. */
 
-.dash-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
-.widget { position: relative; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; min-width: 0; }
-.widget-remove { position: absolute; top: 10px; right: 10px; opacity: 0; transition: opacity .15s; z-index: 1; }
+.dash-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 22px; }
+.dash-card {
+  display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-1);
+  color: var(--text-primary); transition: border-color .15s, background .15s;
+}
+.dash-card:hover { border-color: var(--accent); }
+.dash-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.dash-card-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-card-meta { font-size: 12px; color: var(--text-muted); }
+
+.dashboard .ds-head { margin-bottom: 14px; }
+.ds-title { min-width: 0; flex: 1; }
+.title-line { display: flex; align-items: center; gap: 6px; }
+.title-line h3 { font-size: 20px; font-weight: 650; letter-spacing: var(--tracking-display); }
+.title-line .icon-btn.icon-only { opacity: .6; }
+.title-line .icon-btn.icon-only:hover { opacity: 1; }
+.title-line.editing input {
+  flex: 1; min-width: 0; max-width: 520px; padding: 8px 12px; font: inherit; font-size: 16px;
+  border: 1px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-primary);
+}
+.ds-actions .icon-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+.period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 18px; }
+.period-bar .chips { margin: 0; }
+.period-custom { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid transparent; border-radius: var(--radius-control); }
+.period-custom.active { border-color: var(--accent); }
+.period-custom label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+.period-custom input {
+  padding: 6px 8px; font: inherit; font-size: 13px; color: var(--text-primary);
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+}
+.period-hint { font-size: 12px; color: var(--text-muted); }
+
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.summary-item { padding: 14px 16px; border-radius: var(--radius-sm); background: var(--surface-1); border: 1px solid var(--border); min-width: 0; }
+.summary-title { font-size: 12px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.summary-value { font-size: 26px; font-weight: 650; letter-spacing: var(--tracking-display); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.summary-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; color: var(--text-secondary); }
+
+.dash-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; transition: opacity .2s; }
+.dash-grid.stale { opacity: .55; }
+.widget { position: relative; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
+.widget-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 4px; padding-right: 28px; }
+.widget-head h4 { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border); }
+.widget-remove { position: absolute; top: 12px; right: 12px; opacity: 0; transition: opacity .15s; z-index: 1; }
 .widget:hover .widget-remove, .widget-remove:focus-visible { opacity: 1; }
 @media (hover: none) { .widget-remove { opacity: 1; } }
+
+@media (max-width: 880px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-grid .widget { grid-column: 1 / -1 !important; }
+}
+
+/* Печать и сохранение в PDF: только панель, без навигации и кнопок. */
+@media print {
+  .sidebar, .view:not(.active), .view-head, .dash-list, .ds-actions, .period-bar,
+  .widget-remove, .title-line .icon-btn, .viz figcaption .icon-btn { display: none !important; }
+  .main, .view.active, .scroll { display: block !important; overflow: visible !important; padding: 0 !important; }
+  body { background: #fff !important; }
+  .widget, .summary-item { break-inside: avoid; box-shadow: none; }
+  .dash-grid { gap: 10px; }
+}

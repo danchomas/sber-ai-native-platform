@@ -59,3 +59,23 @@
 .modal-foot { padding: 18px 24px; }
 .field input { min-height: 44px; }
 .field input:focus-visible { outline: 3px solid var(--accent-soft); outline-offset: 2px; }
+
+/* Главное число результата. */
+.headline { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 2px 0 10px; }
+.headline-value { font-size: 30px; font-weight: 650; letter-spacing: var(--tracking-display); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.headline.compact .headline-value { font-size: 24px; }
+.headline-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+.headline-share { color: var(--text-secondary); }
+.delta { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.delta.up { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.delta.down { color: var(--critical); background: color-mix(in srgb, var(--critical) 12%, transparent); }
+.delta.flat { color: var(--text-secondary); background: var(--surface-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Сработавшая защита — отдельно от предупреждений о данных. */
+.notice.security {
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  align-items: flex-start;
+}
+.notice.security svg { flex: none; margin-top: 1px; color: var(--accent); }
