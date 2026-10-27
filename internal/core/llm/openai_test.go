@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,5 +72,29 @@ func TestConverseSendsToolsAndParsesCalls(t *testing.T) {
 	}
 	if reply.ToolCalls[1].ID == "" || !strings.Contains(string(reply.ToolCalls[1].Arguments), "готово") {
 		t.Fatalf("вызов без id и с аргументами-объектом: %+v", reply.ToolCalls[1])
+	}
+}
+
+func TestConverseRequiresTool(t *testing.T) {
+	var got chatRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &got)
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":{"message":"tool_choice \"required\" is not supported"}}`)
+	}))
+	defer srv.Close()
+
+	client := New(config.LLM{BaseURL: srv.URL, Model: "m", Timeout: 5 * time.Second})
+	_, err := client.Converse(context.Background(), domain.Completion{
+		Messages:    []domain.ChatMessage{{Role: domain.RoleUser, Content: "вопрос"}},
+		Tools:       []domain.ToolSpec{{Name: "answer", Parameters: json.RawMessage(`{"type":"object"}`)}},
+		RequireTool: true,
+	})
+	if got.ToolChoice != "required" {
+		t.Fatalf("tool_choice = %q", got.ToolChoice)
+	}
+	if !errors.Is(err, ErrToolChoiceUnsupported) || errors.Is(err, ErrToolsUnsupported) {
+		t.Fatalf("отказ от tool_choice не должен выглядеть как отказ от инструментов: %v", err)
 	}
 }
