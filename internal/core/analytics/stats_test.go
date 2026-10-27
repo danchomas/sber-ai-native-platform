@@ -177,3 +177,35 @@ func ExampleForecast() {
 	fmt.Printf("%s, рост %.0f%%\n", summary.Method, summary.Growth*100)
 	// Output: линейный тренд, рост 50%
 }
+
+func TestFit(t *testing.T) {
+	tests := []struct {
+		name      string
+		xs, ys    []float64
+		slope     float64
+		r2        float64
+		expectErr bool
+	}{
+		{name: "exact line", xs: []float64{1, 2, 3, 4, 5, 6}, ys: []float64{12, 14, 16, 18, 20, 22}, slope: 2, r2: 1},
+		{name: "falling demand", xs: []float64{10, 11, 12, 13, 14, 15}, ys: []float64{100, 95, 90, 85, 80, 75}, slope: -5, r2: 1},
+		{name: "too short", xs: []float64{1, 2, 3}, ys: []float64{1, 2, 3}, expectErr: true},
+		{name: "constant driver", xs: []float64{5, 5, 5, 5, 5, 5}, ys: []float64{1, 2, 3, 4, 5, 6}, expectErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reg, err := Fit(tt.xs, tt.ys)
+			if tt.expectErr {
+				if err == nil {
+					t.Fatalf("ожидалась ошибка, получено %+v", reg)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("неожиданная ошибка: %v", err)
+			}
+			if math.Abs(reg.Slope-tt.slope) > 1e-9 || math.Abs(reg.R2-tt.r2) > 1e-9 {
+				t.Fatalf("наклон %v, R² %v; ожидалось %v, %v", reg.Slope, reg.R2, tt.slope, tt.r2)
+			}
+		})
+	}
+}
