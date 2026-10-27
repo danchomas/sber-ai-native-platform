@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -37,7 +38,11 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	dashboard, err := h.dashboards.Get(r.Context(), id, request.Bool(r, "refresh", true))
+	period := domain.DateRange{
+		From: strings.TrimSpace(r.URL.Query().Get("from")),
+		To:   strings.TrimSpace(r.URL.Query().Get("to")),
+	}
+	dashboard, err := h.dashboards.Get(r.Context(), id, request.Bool(r, "refresh", true), period)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -157,7 +162,7 @@ func (h *Handler) RemoveWidget(w http.ResponseWriter, r *http.Request) {
 
 type Dashboards interface {
 	List(ctx context.Context, limit int) ([]domain.Dashboard, error)
-	Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.Dashboard, error)
+	Get(ctx context.Context, id uuid.UUID, refresh bool, period domain.DateRange) (*domain.Dashboard, error)
 	Delete(ctx context.Context, id uuid.UUID) error
 	Create(ctx context.Context, title, description string, widgets []domain.Widget) (*domain.Dashboard, error)
 	Rename(ctx context.Context, id uuid.UUID, title string) error
