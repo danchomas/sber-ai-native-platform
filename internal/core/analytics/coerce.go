@@ -14,9 +14,6 @@ var dateLayouts = []string{
 	"2006-01-02", "02.01.2006", "2006-01", "01.2006", "2006",
 }
 
-// coerce приводит значение фильтра к типу колонки ещё в Go. Значение уходит
-// в базу параметром, но проверка здесь даёт модели понятную ошибку вместо
-// ошибки PostgreSQL и не пропускает в запрос мусор вроде строки на 10 МБ.
 func coerce(v any, col domain.Column) (any, error) {
 	if v == nil {
 		return nil, invalid("не задано значение фильтра по «%s»", title(col))
@@ -101,8 +98,6 @@ func coerce(v any, col domain.Column) (any, error) {
 	return nil, invalid("значение %v не подходит к колонке «%s» типа %s", v, title(col), col.Type)
 }
 
-// coerceList собирает типизированный массив для = ANY($n): так база
-// получает bigint[] или date[], а не массив строк, который не сравнить с колонкой.
 func coerceList(values []any, col domain.Column) (any, error) {
 	converted := make([]any, 0, len(values))
 	for _, v := range values {

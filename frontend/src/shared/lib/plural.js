@@ -1,4 +1,3 @@
-// Русское склонение по числу: 1 строка, 2 строки, 5 строк.
 export function plural(n, one, few, many) {
   const mod10 = n % 10;
   const mod100 = n % 100;

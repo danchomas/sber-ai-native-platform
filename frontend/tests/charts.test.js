@@ -1,7 +1,3 @@
-// Движок визуализаций перенесён из встроенного интерфейса целиком.
-// Тест проверяет, что перенос не сломал его: по форме результата он
-// выдаёт нужный тип разметки и всегда даёт табличную проекцию.
-
 // @vitest-environment happy-dom
 
 import { describe, expect, it } from "vitest";
@@ -24,7 +20,6 @@ describe("движок визуализаций", () => {
     const node = render({ type: "bar", x: "Статус", y: ["Количество"] }, rs, { height: 260 });
 
     expect(node.querySelector("svg")).toBeTruthy();
-    // Столбцы рисуются скруглёнными path, а не rect.
     expect(node.querySelectorAll("path").length).toBeGreaterThan(0);
   });
 
@@ -42,7 +37,6 @@ describe("движок визуализаций", () => {
     );
     const node = render({ type: "line", x: "Месяц", y: ["Сумма"] }, rs, { height: 240 });
 
-    // Табличная проекция обязательна: она же страхует контраст в светлой теме.
     expect(node.querySelector("table")).toBeTruthy();
   });
 

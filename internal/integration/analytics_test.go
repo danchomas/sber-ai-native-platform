@@ -14,9 +14,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
-// TestCompiledQueriesRunOnPostgres проверяет, что запросы компилятора
-// агента действительно выполняются PostgreSQL: типизированные параметры,
-// приведения дат, окна и соединения по выведенной связи.
 func TestCompiledQueriesRunOnPostgres(t *testing.T) {
 	pool := setup(t)
 	e := newEnv(t, pool)
@@ -117,9 +114,6 @@ func TestCompiledQueriesRunOnPostgres(t *testing.T) {
 	}
 }
 
-// TestReaderRoleIsolation проверяет последний слой защиты: даже запрос,
-// прошедший мимо компилятора и sqlguard, под ролью чтения не изменит
-// данные и не увидит метаданные платформы.
 func TestReaderRoleIsolation(t *testing.T) {
 	pool := setup(t)
 	e := newEnv(t, pool)

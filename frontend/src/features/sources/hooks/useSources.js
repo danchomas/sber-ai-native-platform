@@ -2,10 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
 
-// useSources ведёт подключённые базы и их таблицы.
-//
-// Подключение проверяется платформой до записи в каталог, поэтому
-// неудачная строка подключения просто возвращает ошибку и ничего не создаёт.
 export function useSources() {
   const [items, setItems] = useState([]);
   const [tables, setTables] = useState({});

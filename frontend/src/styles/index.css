@@ -1,6 +1,3 @@
-/* Inter подключается пакетом, а не из Google Fonts: платформа не должна
-   ходить в сеть за ресурсами — это требование автономности стенда.
-   Файлы шрифта попадают в сборку и раздаются тем же nginx. */
 @import "@fontsource/inter/400.css";
 @import "@fontsource/inter/500.css";
 @import "@fontsource/inter/600.css";

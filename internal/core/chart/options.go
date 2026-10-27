@@ -8,10 +8,6 @@ var optionOrder = []domain.ChartType{
 	domain.ChartTypeHeatmap, domain.ChartTypeTable,
 }
 
-// Options — визуализации, которыми можно показать этот результат. По ним
-// пользователь переключает вид кнопками, не спрашивая модель ещё раз
-// («покажи в другом виде»). Совместимость решается по форме результата,
-// как и в Pick: типы колонок и число строк.
 func Options(current domain.ChartSpec, rs *domain.ResultSet) []domain.ChartSpec {
 	if rs.Empty() {
 		return nil

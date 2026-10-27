@@ -10,8 +10,6 @@ import (
 
 const maxTopValuesInDescribe = 10
 
-// describe отдаёт модели профиль датасета из каталога. Запросов к базе
-// он не делает: всё посчитано при загрузке.
 func (r *agentRun) describe(name string) (string, int, error) {
 	name = strings.TrimSpace(name)
 	var targets []domain.Dataset
@@ -39,8 +37,6 @@ func (r *agentRun) describe(name string) (string, int, error) {
 }
 
 func (r *agentRun) describeDataset(d domain.Dataset) map[string]any {
-	// Всё, что пришло из файла или чужой базы, — недоверенный текст:
-	// заголовки, значения и комментарии проходят фильтр.
 	origin := "загружен из файла " + r.filter.clean(d.SourceFile, maxNameRunes)
 	if d.Attached() {
 		origin = "таблица подключённой базы «" + r.filter.clean(d.SourceName, maxNameRunes) + "»"

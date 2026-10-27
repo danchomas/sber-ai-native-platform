@@ -20,9 +20,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
-// ToolCaller — модель, умеющая разговор с инструментами. Объявлен здесь,
-// а не в domain.LLM: резервная модель и модели без function calling его
-// не реализуют, и агент тогда отвечает через план в JSON-режиме.
 type ToolCaller interface {
 	Converse(ctx context.Context, req domain.Completion) (domain.Reply, error)
 }
@@ -33,13 +30,11 @@ const (
 	maxWidgets        = 8
 	maxCellRunes      = 80
 	maxToolOutputRows = resultRowsForModel
-	// maxArgsBytes — предел аргументов одного вызова. Честному вызову
-	// хватает пары килобайт; больше — признак мусора или атаки.
+
 	maxArgsBytes = 16 << 10
-	// maxRepeats — сколько одинаковых вызовов терпит цикл, прежде чем
-	// остановиться: малые модели склонны зацикливаться.
+
 	maxRepeats = 3
-	// maxFailStreak — сколько ошибок подряд терпит цикл.
+
 	maxFailStreak = 4
 )
 
@@ -75,7 +70,6 @@ type agentRun struct {
 	filter    *dataFilter
 	progress  func(domain.AgentStep)
 
-	// seen — результаты уже выполненных вызовов по ключу «имя+аргументы».
 	seen       map[string]string
 	repeats    int
 	failStreak int
@@ -89,11 +83,6 @@ type agentRun struct {
 	final     *agentFinal
 }
 
-// runAgent ведёт цикл: модель вызывает инструменты, видит их результат и
-// решает, что делать дальше, пока не вызовет answer, clarify или decline.
-// Ошибку возвращает, только если модель не ответила на первом же шаге —
-// тогда вызывающий выбирает запасной путь. Дальше любая проблема
-// превращается в ответ с предупреждением, как и во всём агенте.
 func (s *Service) runAgent(
 	ctx context.Context,
 	caller ToolCaller,
@@ -112,10 +101,6 @@ func (s *Service) runAgent(
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: in.question})
 	system := buildAgentPrompt(buildToolContext(in.filter, in.datasets, in.relations), s.agent.AllowRawSQL, in.canary)
 
-	// Обязательный вызов инструмента — на первом шаге и после напоминания:
-	// без него модели, особенно на длинной истории, «отвечают» текстом
-	// и придумывают числа. Если сервер параметр не понимает, модель
-	// запоминается и дальше спрашивается без него.
 	_, choiceOff := s.noToolChoice.Load(in.model)
 	nudged, force := false, !choiceOff
 	for step := 0; step < s.agent.MaxSteps; step++ {
@@ -143,9 +128,6 @@ func (s *Service) runAgent(
 			calls = llm.ToolCallsFromText(reply.Content, func(name string) bool { return r.known[name] })
 		}
 		if len(calls) == 0 {
-			// Ответ текстом, когда ничего не посчитано, — частая привычка
-			// моделей: они «отвечают» по описанию каталога и придумывают
-			// числа. Один раз просим опереться на инструменты.
 			if !nudged && len(r.results) == 0 && !r.described && step+1 < s.agent.MaxSteps {
 				nudged, force = true, !choiceOff
 				messages = append(messages,
@@ -183,7 +165,7 @@ func (s *Service) runAgent(
 			s.log.InfoContext(ctx, "агент остановлен: ошибки инструментов подряд", "step", step)
 			return r.finish(""), nil
 		case step == s.agent.MaxSteps-2:
-			// Последний шаг модель должна потратить на ответ, а не на новый расчёт.
+
 			messages = append(messages, domain.ChatMessage{
 				Role:    domain.RoleUser,
 				Content: "Остался один шаг. Заверши работу вызовом answer по уже полученным результатам или clarify, если их нет.",
@@ -200,7 +182,6 @@ const groundingNudge = "Ответ не принят: факты и числа �
 	"Если вопрос о данных — вызови нужный инструмент (describe_dataset, aggregate и другие) и закончи вызовом answer. " +
 	"Если это приветствие или вопрос о самой платформе — вызови answer с тем же текстом."
 
-// agentInput — всё, что агенту нужно знать о вопросе.
 type agentInput struct {
 	sessionID uuid.UUID
 	question  string
@@ -210,7 +191,7 @@ type agentInput struct {
 	canary    promptguard.Canary
 	filter    *dataFilter
 	progress  func(domain.AgentStep)
-	// model — имя модели, чтобы помнить её возможности между вопросами.
+
 	model string
 }
 
@@ -278,8 +259,6 @@ func (r *agentRun) dispatch(ctx context.Context, call domain.ToolCall) string {
 	return output
 }
 
-// callKey — ключ вызова для поиска повторов. Аргументы приводятся к
-// каноническому JSON, чтобы порядок полей и пробелы не делали повтор новым.
 func callKey(call domain.ToolCall) string {
 	var v any
 	if err := json.Unmarshal(call.Arguments, &v); err != nil {
@@ -293,8 +272,6 @@ func callKey(call domain.ToolCall) string {
 }
 
 func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, int, error) {
-	// Инструмент, которого нет в наборе этого вопроса, не выполняется, даже
-	// если модель знает его имя: набор определяет платформа, а не модель.
 	if !r.known[call.Name] {
 		if call.Name == toolSQL {
 			return "", 0, errors.New("инструмент run_sql отключён: используй aggregate")
@@ -431,8 +408,6 @@ func (r *agentRun) resultIDs() []string {
 	return ids
 }
 
-// run выполняет собранный запрос. Даже SQL, собранный компилятором,
-// проходит sqlguard: второй слой не доверяет первому.
 func (r *agentRun) run(ctx context.Context, c *analytics.Compiled, q *analytics.Query, title string) (string, int, error) {
 	if len(r.results) >= maxResultsPerRun {
 		return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
@@ -492,8 +467,6 @@ type widgetArgs struct {
 	Width    int        `json:"width"`
 }
 
-// buildWidgets превращает ссылки на результаты в виджеты. Виджет хранит
-// параметры запроса, а не выгрузку: при открытии панели цифры пересчитаются.
 func (r *agentRun) buildWidgets(args []widgetArgs) ([]domain.Widget, []string) {
 	if len(args) > maxWidgets {
 		args = args[:maxWidgets]
@@ -740,8 +713,6 @@ func (r *agentRun) finish(content string) *domain.Answer {
 	}
 
 	if f.text == "" && len(r.steps) > 0 {
-		// Модель работала, но до результата не дошла: честнее попросить
-		// уточнить вопрос, чем рассказывать о возможностях платформы.
 		answer.Intent = domain.IntentClarify
 		answer.Text = "Не получилось посчитать ответ по данным. Уточните, какой показатель нужен, " +
 			"за какой период и в каком разрезе, — или выберите один из вопросов ниже."
@@ -756,7 +727,6 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		"Я отвечаю на вопросы по загруженным данным: описываю их состав, считаю показатели, "+
 			"строю графики и собираю дашборды. Спросите, например, «что есть в этих данных».")
 	if hasDigits.MatchString(f.text) {
-		// Числа без единого расчёта взяты не из данных.
 		answer.Warnings = append(answer.Warnings,
 			"Этот ответ дан без расчёта по данным, числа в нём не проверены. "+
 				"Уточните вопрос — например, назовите показатель и датасет, — чтобы получить расчёт.")
@@ -857,8 +827,6 @@ func (r *agentRun) resultOutput(res *agentResult) map[string]any {
 	return out
 }
 
-// tableRows — результат в виде, удобном модели. Строки из данных проходят
-// фильтр: значение, похожее на инструкцию, модель не увидит.
 func (r *agentRun) tableRows(rs *domain.ResultSet) map[string]any {
 	if rs == nil {
 		return map[string]any{}

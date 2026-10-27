@@ -10,16 +10,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// EnsureReaderRole готовит роль, под которой выполняются аналитические
-// запросы к собственной базе платформы. Это последний слой защиты после
-// компилятора запросов и sqlguard: у роли есть только SELECT на схему
-// сырых данных. Даже если запрос обойдёт обе проверки, база не даст ни
-// изменить данные, ни прочитать метаданные платформы (ключи провайдеров,
-// строки подключения), ни вызвать функции суперпользователя вроде
-// pg_read_file.
-//
-// Пароль генерируется заново при каждом старте и нигде не хранится:
-// знает его только этот процесс.
 func EnsureReaderRole(ctx context.Context, pool *pgxpool.Pool, role, schema string, timeout time.Duration) (string, error) {
 	if role == "" || schema == "" {
 		return "", fmt.Errorf("не задана роль чтения или схема данных")
@@ -47,7 +37,7 @@ func EnsureReaderRole(ctx context.Context, pool *pgxpool.Pool, role, schema stri
 		verb = "ALTER"
 	}
 	r, s := QuoteIdent(role), QuoteIdent(schema)
-	// Пароль — hex, поэтому литерал безопасен; параметры в DDL не поддерживаются.
+
 	statements := []string{
 		fmt.Sprintf(`%s ROLE %s WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS PASSWORD %s`,
 			verb, r, QuoteLiteral(password)),

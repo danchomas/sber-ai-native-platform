@@ -1,5 +1,3 @@
-// Связи выводятся статистически, по пересечению идентификаторов: внешних
-// ключей в CSV нет, а в подключённых таблицах платформа их не читает.
 export function RelationList({ relations }) {
   if (!relations.length) return null;
 

@@ -27,7 +27,6 @@ func JSON(w http.ResponseWriter, r *http.Request, status int, payload any) {
 		return
 	}
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-
 		logger.From(r.Context()).Error("ответ не сериализован", "error", err)
 	}
 }
@@ -58,8 +57,6 @@ func Error(w http.ResponseWriter, r *http.Request, err error) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// Classify — то же сопоставление ошибки с кодом и сообщением, что
-// в Error, для ответов, которые не укладываются в один JSON (поток событий).
 func Classify(err error) (status int, code, message string) {
 	return classify(err)
 }

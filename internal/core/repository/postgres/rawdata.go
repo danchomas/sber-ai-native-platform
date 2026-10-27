@@ -29,9 +29,6 @@ func NewRawDataRepository(registry *pgpool.Registry, schema string, queryTimeout
 	return &RawDataRepository{registry: registry, schema: schema, queryTimeout: queryTimeout}
 }
 
-// WithReader направляет аналитические запросы к собственной базе в пул
-// роли только для чтения (см. EnsureReaderRole). Загрузка, профилирование
-// и удаление таблиц по-прежнему идут от владельца.
 func (r *RawDataRepository) WithReader(pool *pgxpool.Pool) *RawDataRepository {
 	r.reader = pool
 	return r
@@ -283,7 +280,6 @@ func (r *RawDataRepository) Sample(ctx context.Context, ref domain.TableRef, lim
 }
 
 func (r *RawDataRepository) ValueOverlap(ctx context.Context, left, right domain.TableRef) (float64, int64, error) {
-
 	if !left.SameSource(right) {
 		return 0, 0, nil
 	}

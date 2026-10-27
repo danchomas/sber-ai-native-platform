@@ -12,9 +12,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
-// Инструменты для гипотез (сценарии 3, 7-10 ТЗ): выбросы, сезонность,
-// корреляции с лагом, прогноз. Модель выбирает ряд, платформа агрегирует
-// его тем же компилятором, а статистику считает в Go.
 const (
 	toolSeasonality = "seasonality"
 	toolCorrelate   = "correlate"
@@ -109,8 +106,6 @@ func (a seriesArgs) metric() analytics.Metric {
 	return *a.Metric
 }
 
-// series агрегирует ряд «период — метрики» тем же путём, что aggregate:
-// компилятор, sqlguard, роль чтения.
 func (r *agentRun) series(ctx context.Context, a seriesArgs, metrics ...analytics.Metric) (*domain.ResultSet, string, []string, error) {
 	q := analytics.Query{
 		Dataset: a.Dataset, Time: &a.Time, Metrics: metrics,
@@ -373,8 +368,6 @@ func (r *agentRun) anomalies(ctx context.Context, a seriesArgs) (string, int, er
 	return encodeOutput(payload), len(out.Rows), nil
 }
 
-// register сохраняет производный результат. У него нет параметров
-// запроса: виджет из него не пересчитать, поэтому на дашборд он не идёт.
 func (r *agentRun) register(title, sql string, tables []string, rs *domain.ResultSet,
 	warnings []string, analysis string, spec *domain.ChartSpec,
 ) *agentResult {

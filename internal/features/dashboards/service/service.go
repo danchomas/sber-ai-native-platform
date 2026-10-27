@@ -39,8 +39,7 @@ type Service struct {
 	catalog Catalog
 	exec    Executor
 	cfg     config.Query
-	// allowSQL — AGENT_ALLOW_RAW_SQL: принимать ли виджеты с готовым SQL
-	// вместо параметров запроса.
+
 	allowSQL bool
 	log      *slog.Logger
 }
@@ -87,8 +86,6 @@ func (s *Service) List(ctx context.Context, limit int) ([]domain.Dashboard, erro
 	return s.repo.List(ctx, limit)
 }
 
-// Get возвращает панель. При refresh виджеты пересчитываются заново;
-// непустой period ограничивает виджеты с динамикой этим периодом.
 func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool, period domain.DateRange) (*domain.Dashboard, error) {
 	if err := validatePeriod(period); err != nil {
 		return nil, err
@@ -162,9 +159,6 @@ func (s *Service) refreshWidget(
 	return result, applied, err
 }
 
-// widgetError — понятная пользователю причина, по которой виджет не
-// пересчитан. Свои проверки платформы объясняют себя сами, а текст
-// ошибки базы уходит только в лог: он раскрывает устройство хранилища.
 func (s *Service) widgetError(ctx context.Context, widgetID uuid.UUID, err error) string {
 	switch {
 	case errors.Is(err, apperr.ErrValidation), errors.Is(err, apperr.ErrUnsafeQuery):
@@ -209,11 +203,6 @@ func (s *Service) analyticsCatalog(ctx context.Context) (analytics.Catalog, erro
 	return analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()}, nil
 }
 
-// widgetQuery пересобирает SQL виджета из сохранённых параметров: так
-// виджет проходит текущую проверку каталога и переживает переименование
-// таблиц. Фильтр периода добавляется к параметрам, а не вклеивается
-// в SQL, и применяется только к виджетам с временной разбивкой. Виджеты,
-// у которых есть только SQL, выполняются как есть и фильтр не принимают.
 func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int, period domain.DateRange) (string, []any, bool, error) {
 	if len(w.Query) == 0 {
 		return w.SQL, nil, false, nil
@@ -229,7 +218,6 @@ func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int, period
 			q.Filters = append(q.Filters, analytics.Filter{Column: q.Time.Column, Op: analytics.OpGte, Value: period.From})
 		}
 		if period.To != "" {
-			// Граница включительно: всё, что раньше следующего дня.
 			to, _ := time.Parse(dateLayout, period.To)
 			q.Filters = append(q.Filters, analytics.Filter{
 				Column: q.Time.Column, Op: analytics.OpLt, Value: to.AddDate(0, 0, 1).Format(dateLayout),
@@ -245,8 +233,6 @@ func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int, period
 	return compiled.SQL, compiled.Args, applied, nil
 }
 
-// dateRange — общий период данных виджетов с динамикой по профилю
-// каталога, без запросов к базе.
 func dateRange(widgets []domain.Widget, catalog analytics.Catalog) *domain.DateRange {
 	var out domain.DateRange
 	for _, w := range widgets {
@@ -289,8 +275,6 @@ func timeProfile(catalog analytics.Catalog, dataset, column string) *domain.Colu
 	return nil
 }
 
-// day берёт из значения профиля дату: профиль хранит её текстом базы,
-// например «2024-06-30» или «2024-06-30 12:00:00+00».
 func day(v string) string {
 	if len(v) < len(dateLayout) {
 		return ""
@@ -301,8 +285,6 @@ func day(v string) string {
 	return v[:len(dateLayout)]
 }
 
-// Create собирает панель из виджетов, присланных интерфейсом: например,
-// из ответа в чате, закреплённого пользователем.
 func (s *Service) Create(ctx context.Context, title, description string, widgets []domain.Widget) (*domain.Dashboard, error) {
 	checked := make([]domain.Widget, 0, len(widgets))
 	for _, w := range widgets {
@@ -315,9 +297,6 @@ func (s *Service) Create(ctx context.Context, title, description string, widgets
 	return s.CreateFromWidgets(ctx, nil, title, description, checked)
 }
 
-// AddWidget дописывает виджет на существующую панель. Запрос виджета
-// проверяется сразу, а не при первом открытии: на панель не попадёт то,
-// что нельзя выполнить.
 func (s *Service) AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error) {
 	w, err := s.checkWidget(ctx, w)
 	if err != nil {
@@ -350,8 +329,7 @@ func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widg
 	if len(w.Query) == 0 && strings.TrimSpace(w.SQL) == "" {
 		return w, apperr.NewValidationError("query", "у виджета нет запроса")
 	}
-	// Готовый SQL от клиента — тот же свободный SQL, что и от модели:
-	// по умолчанию виджет описывается только параметрами запроса.
+
 	if len(w.Query) == 0 && !s.allowSQL {
 		return w, fmt.Errorf("%w: виджет должен описываться параметрами запроса, свободный SQL отключён",
 			apperr.ErrUnsafeQuery)

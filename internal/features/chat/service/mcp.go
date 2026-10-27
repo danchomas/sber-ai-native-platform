@@ -10,10 +10,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Инструменты чтения данных, которые платформа отдаёт внешним агентам
-// по MCP. Это тот же код, что в цикле агента, с теми же слоями защиты.
-// Дашборды и финальные ответы наружу не отдаются: у внешнего клиента
-// своя модель и свой диалог, а ссылки result_id между вызовами не живут.
 var dataTools = []string{
 	toolDescribe, toolAggregate, toolRows, toolDuplicates,
 	toolSeasonality, toolCorrelate, toolForecast, toolAnomalies,
@@ -31,8 +27,6 @@ func (s *Service) DataTools() []domain.ToolSpec {
 	return out
 }
 
-// CallTool выполняет один инструмент вне диалога. Ошибка в аргументах —
-// не сбой, а ответ для модели клиента: она её прочитает и исправит вызов.
 func (s *Service) CallTool(ctx context.Context, name string, args []byte) (output string, isError bool, err error) {
 	if !slices.Contains(dataTools, name) {
 		return fmt.Sprintf("инструмента %q нет", name), true, nil
@@ -60,8 +54,6 @@ func (s *Service) CallTool(ctx context.Context, name string, args []byte) (outpu
 	return out, false, nil
 }
 
-// DataContext — каталог для внешнего агента: тот же текст, что видит
-// встроенный агент в системном промпте.
 func (s *Service) DataContext(ctx context.Context) (string, error) {
 	datasets, err := s.catalog.List(ctx)
 	if err != nil {

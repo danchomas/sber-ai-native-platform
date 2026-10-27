@@ -6,16 +6,11 @@ function readStored() {
   try {
     return localStorage.getItem(KEY);
   } catch {
-    // Приватный режим: обходимся предпочтением системы.
     return null;
   }
 }
 
-// useTheme хранит тему в атрибуте документа — от него зависят CSS-токены,
-// из которых движок графиков читает цвета.
 export function useTheme() {
-  // Светлая тема — основная: в ней задан язык оформления платформы.
-  // Тёмная включается только по явному предпочтению системы или выбору.
   const [theme, setTheme] = useState(() => {
     const stored = readStored();
     if (stored === "light" || stored === "dark") return stored;
@@ -28,7 +23,6 @@ export function useTheme() {
     try {
       localStorage.setItem(KEY, theme);
     } catch {
-      // Не критично: тема переживёт только текущую вкладку.
     }
   }, [theme]);
 

@@ -84,8 +84,6 @@ services:
       api:
         condition: service_started
 
-  # Профиль llm включается явно:
-  #   docker compose --profile llm up -d
   ollama:
     image: ollama/ollama:latest
     profiles: ["llm"]

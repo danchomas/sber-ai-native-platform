@@ -6,10 +6,6 @@ import { Modal } from "../../../shared/ui/Modal.jsx";
 
 const NEW = "new";
 
-// PinDialog закрепляет ответ на дашборде: на существующем или на новом.
-//
-// На панель уходят параметры запроса, а не выгрузка: виджет пересчитается
-// при каждом открытии, а бэкенд проверит запрос ещё до сохранения.
 export function PinDialog({ widget, onClose, onPinned }) {
   const [dashboards, setDashboards] = useState([]);
   const [target, setTarget] = useState(NEW);

@@ -1,13 +1,9 @@
-# Сборка и запуск платформы.
 BINARY      := bin/aibi
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION)
-# Настройки берутся из .env — того же файла, что читает docker compose.
-# Зашитых учётных данных в проекте нет ни одного места.
 -include .env
 export
 
-# Строка подключения к тестовой базе собирается из тех же переменных.
 TEST_PG_DSN ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)_test?sslmode=disable
 COMPOSE_DSN := postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres:5432/$(POSTGRES_DB)?sslmode=disable
 

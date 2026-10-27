@@ -2,10 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
 
-// useChat держит историю активного диалога и отправляет вопросы.
-//
-// Пока ответ готовится, в ленту кладётся заглушка с ходом работы: агент
-// может думать десятки секунд, и шаги приходят потоком по мере выполнения.
 export function useChat(sessionId, { onAnswered } = {}) {
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);

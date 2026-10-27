@@ -1,6 +1,3 @@
-// Форматирование чисел, дат и размеров для интерфейса.
-// Локаль фиксирована: платформа русскоязычная.
-
 const numberFmt = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
 const compactFmt = new Intl.NumberFormat("ru-RU", { notation: "compact", maximumFractionDigits: 1 });
 

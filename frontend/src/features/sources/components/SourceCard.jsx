@@ -4,9 +4,6 @@ import { fmtNum } from "../../../shared/lib/format.js";
 import { ErrorBanner } from "../../../shared/ui/ErrorBanner.jsx";
 import { Spinner } from "../../../shared/ui/Spinner.jsx";
 
-// SourceCard показывает подключённую базу и её таблицы.
-// Подключить таблицу — значит завести по ней датасет: платформа
-// прочитает структуру и посчитает профиль, данные останутся на месте.
 export function SourceCard({ source, tables, onLoadTables, onAttachTable, onDetach }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

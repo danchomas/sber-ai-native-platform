@@ -1,7 +1,3 @@
-// Быстрые фильтры периода считаются от последней даты в данных панели,
-// а не от сегодняшнего дня: исторический датасет за 2023 год при фильтре
-// «последний квартал от сегодня» показал бы пустые графики.
-
 const PRESETS = [
   { id: "all", label: "Весь период", months: 0 },
   { id: "year", label: "Последний год", months: 12 },
@@ -14,7 +10,6 @@ function iso(d) {
   return d.toISOString().slice(0, 10);
 }
 
-// presetRange возвращает {from, to} для быстрого фильтра или null для «весь период».
 function presetRange(preset, range) {
   if (!preset.months || !range?.to) return null;
   const to = new Date(`${range.to}T00:00:00Z`);

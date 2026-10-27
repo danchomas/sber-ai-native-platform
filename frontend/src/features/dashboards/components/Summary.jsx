@@ -1,8 +1,5 @@
 import { fmtCompact } from "../../../shared/lib/format.js";
 
-// Summary — полоса «Главное» над сеткой: по одному числу с каждого
-// виджета, у которого оно есть. Руководитель видит итог панели, не
-// разбирая графики.
 export function Summary({ widgets }) {
   const items = widgets.filter((w) => w.headline && !w.error).slice(0, 6);
   if (items.length < 2) return null;

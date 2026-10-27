@@ -322,7 +322,6 @@ func TestGuardedQueryExecution(t *testing.T) {
 	})
 
 	t.Run("изменение данных невозможно", func(t *testing.T) {
-
 		_, err := e.raw.Query(ctx, target, `DELETE FROM `+report.Dataset.TableName, 10)
 		if err == nil {
 			t.Fatal("удаление данных прошло через read-only транзакцию")

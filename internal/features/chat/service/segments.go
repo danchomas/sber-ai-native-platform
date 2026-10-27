@@ -12,9 +12,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Инструменты для сценариев 8 и 10 ТЗ: чем отличаются сегменты и что
-// будет с показателем, если изменить другой. Как и остальные, они
-// собирают запрос компилятором, а вывод считают в Go.
 const (
 	toolCompare = "compare_segments"
 	toolWhatIf  = "what_if"
@@ -129,8 +126,6 @@ func (r *agentRun) compareSegments(ctx context.Context, raw []byte) (string, int
 	return encodeOutput(payload), rows, nil
 }
 
-// measureAverages — средние всех числовых показателей датасета, если
-// модель не назвала, что сравнивать.
 func (r *agentRun) measureAverages(dataset string) []analytics.Metric {
 	var out []analytics.Metric
 	for _, d := range r.datasets {
@@ -147,9 +142,6 @@ func (r *agentRun) measureAverages(dataset string) []analytics.Metric {
 	return out
 }
 
-// segmentDifferences для каждого показателя находит сегменты с наибольшим
-// и наименьшим значением и сортирует показатели по величине разрыва:
-// первым идёт то, чем сегменты отличаются сильнее всего.
 func segmentDifferences(rs *domain.ResultSet, keys int) []map[string]any {
 	if rs == nil || len(rs.Rows) < 2 {
 		return nil

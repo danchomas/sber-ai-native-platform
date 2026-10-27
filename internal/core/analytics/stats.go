@@ -10,18 +10,11 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Статистика для сценариев с гипотезами: сезонность, лаги, прогноз,
-// выбросы. Считается в Go по агрегированному ряду, а не моделью: малая
-// модель в арифметике ошибается, а здесь результат воспроизводим.
-
-// Point — значение метрики за период. Period — начало периода, ГГГГ-ММ-ДД.
 type Point struct {
 	Period string
 	Value  float64
 }
 
-// Series достаёт ряд из результата вида «период | метрика...»: первая
-// колонка — период, column — номер колонки со значением.
 func Series(rs *domain.ResultSet, column int) ([]Point, error) {
 	if rs == nil || len(rs.Columns) <= column || column < 1 {
 		return nil, errors.New("в результате нет ряда «период — значение»")
@@ -100,7 +93,6 @@ func median(xs []float64) float64 {
 	return (s[n/2-1] + s[n/2]) / 2
 }
 
-// linearFit — метод наименьших квадратов по номеру точки.
 func linearFit(ys []float64) (slope, intercept float64) {
 	n := float64(len(ys))
 	if n < 2 {
@@ -122,7 +114,6 @@ func linearFit(ys []float64) (slope, intercept float64) {
 	return slope, (sy - slope*sx) / n
 }
 
-// Pearson — коэффициент корреляции; ok=false, если он не определён.
 func Pearson(xs, ys []float64) (float64, bool) {
 	if len(xs) != len(ys) || len(xs) < 3 {
 		return 0, false
@@ -141,10 +132,6 @@ func Pearson(xs, ys []float64) (float64, bool) {
 	return sxy / math.Sqrt(sxx*syy), true
 }
 
-// Regression — линейная зависимость y от x по парам наблюдений:
-// y ≈ Intercept + Slope·x. R2 — доля разброса y, которую объясняет x;
-// Elasticity — на сколько процентов меняется y при изменении x на 1%
-// в средней точке.
 type Regression struct {
 	Slope      float64
 	Intercept  float64
@@ -153,11 +140,8 @@ type Regression struct {
 	Pairs      int
 }
 
-// minRegressionPairs — меньше пар наблюдений оценка зависимости
-// превращается в гадание.
 const minRegressionPairs = 6
 
-// Fit оценивает зависимость y от x методом наименьших квадратов.
 func Fit(xs, ys []float64) (Regression, error) {
 	if len(xs) != len(ys) {
 		return Regression{}, errors.New("ряды разной длины")
@@ -187,8 +171,6 @@ func Fit(xs, ys []float64) (Regression, error) {
 	return reg, nil
 }
 
-// LagCorrelation — корреляция x[t] и y[t+lag] для лагов 0..maxLag по
-// общим периодам двух рядов: «изменения X предшествуют росту Y на N периодов?».
 type LagCorrelation struct {
 	Lag   int
 	R     float64
@@ -200,7 +182,7 @@ func LagCorrelations(x, y []Point, maxLag int) []LagCorrelation {
 	for _, p := range y {
 		byPeriod[p.Period] = p.Value
 	}
-	// Ряды выравниваются по общим периодам, лаг — сдвиг в этих периодах.
+
 	var xs, ys []float64
 	for _, p := range x {
 		if v, ok := byPeriod[p.Period]; ok {
@@ -223,8 +205,6 @@ func LagCorrelations(x, y []Point, maxLag int) []LagCorrelation {
 	return out
 }
 
-// SeasonalIndex — насколько период сезона (месяц года, квартал, день
-// недели) выше или ниже среднего: 1.25 значит на 25% выше обычного.
 type SeasonalIndex struct {
 	Position int
 	Index    float64
@@ -273,8 +253,6 @@ func seasonPosition(grain Grain) (func(time.Time) int, error) {
 	return nil, invalid("сезонность считается по ряду с grain month, quarter или day")
 }
 
-// Anomaly — точка, далёкая от типичных значений ряда. Используется
-// устойчивая оценка (медиана и MAD): один выброс не сдвигает порог.
 type Anomaly struct {
 	Point
 	Score    float64
@@ -311,8 +289,6 @@ func Anomalies(points []Point) []Anomaly {
 	return out
 }
 
-// ForecastPoint — строка прогноза: факт для истории, прогноз с
-// интервалом для будущих периодов.
 type ForecastPoint struct {
 	Period   string
 	Actual   *float64
@@ -330,9 +306,6 @@ type ForecastSummary struct {
 	LastValue  float64
 }
 
-// Forecast продлевает ряд на horizon периодов: линейный тренд, а при
-// двух и более полных сезонах — тренд плюс аддитивная сезонность.
-// Интервал — ±1.96 стандартного отклонения остатков, расширяющийся с горизонтом.
 func Forecast(points []Point, grain Grain, horizon int) ([]ForecastPoint, ForecastSummary, error) {
 	if len(points) < 4 {
 		return nil, ForecastSummary{}, invalid("для прогноза нужно хотя бы 4 периода истории, есть %d", len(points))
@@ -393,8 +366,7 @@ func Forecast(points []Point, grain Grain, horizon int) ([]ForecastPoint, Foreca
 		v := p.Value
 		out = append(out, ForecastPoint{Period: p.Period, Actual: &v})
 	}
-	// Последняя фактическая точка дублируется в прогнозе, чтобы линии
-	// факта и прогноза на графике сходились.
+
 	joint := ys[n-1]
 	out[n-1].Forecast = &joint
 

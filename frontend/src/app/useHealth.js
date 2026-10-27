@@ -5,10 +5,6 @@ import { truncate } from "../shared/lib/format.js";
 
 const POLL_MS = 30000;
 
-// useHealth опрашивает состояние платформы.
-//
-// Платформа штатно работает без языковой модели, поэтому degraded — это
-// предупреждение, а не ошибка: отвечать на вопросы она всё ещё может.
 export function useHealth() {
   const [health, setHealth] = useState({ tone: "warn", text: "проверка состояния…" });
 

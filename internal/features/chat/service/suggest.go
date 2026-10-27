@@ -9,8 +9,6 @@ import (
 
 const maxSuggestions = 3
 
-// suggestQuestions — продолжения разговора по каталогу, без модели:
-// пользователь всегда видит, что спросить дальше.
 func suggestQuestions(datasets []domain.Dataset) []string {
 	var out []string
 	add := func(q string) {
@@ -37,9 +35,6 @@ func suggestQuestions(datasets []domain.Dataset) []string {
 	return out
 }
 
-// promptName — понятное имя колонки для подсказки пользователю.
-// Подсказка станет вопросом от его имени, поэтому заголовок, похожий
-// на инструкцию, заменяется техническим именем.
 func promptName(c domain.Column) string {
 	name, hidden := promptguard.Data(label(c), 40)
 	if hidden {

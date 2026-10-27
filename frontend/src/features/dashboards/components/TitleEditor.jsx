@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { Icon } from "../../../shared/ui/Icon.jsx";
 
-// TitleEditor — название панели с переименованием на месте.
 export function TitleEditor({ title, onRename }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(title);

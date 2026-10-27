@@ -2,10 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
 
-// useSessions ведёт список диалогов и активный диалог.
-//
-// Память платформы живёт на уровне сессии, поэтому активный диалог —
-// это и есть контекст, в котором агент отвечает.
 export function useSessions() {
   const [items, setItems] = useState([]);
   const [activeId, setActiveId] = useState(null);
@@ -35,7 +31,6 @@ export function useSessions() {
     }
   }, [reload]);
 
-  // При первом открытии продолжаем последний диалог, а если их нет — заводим.
   useEffect(() => {
     let alive = true;
     (async () => {

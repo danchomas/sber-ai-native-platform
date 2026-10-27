@@ -1,8 +1,3 @@
--- Откат начальной схемы.
---
--- Порядок обратный созданию: сначала таблицы со ссылками, потом те,
--- на которые ссылаются. Индексы уходят вместе со своими таблицами.
-
 DROP TABLE IF EXISTS dashboard_widgets;
 DROP TABLE IF EXISTS dashboards;
 DROP TABLE IF EXISTS chat_messages;

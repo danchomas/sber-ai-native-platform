@@ -1,5 +1,3 @@
-/* Панели. */
-
 .dash-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 22px; }
 .dash-card {
   display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 12px 14px;
@@ -55,7 +53,6 @@
   .dash-grid .widget { grid-column: 1 / -1 !important; }
 }
 
-/* Печать и сохранение в PDF: только панель, без навигации и кнопок. */
 @media print {
   .sidebar, .view:not(.active), .view-head, .dash-list, .ds-actions, .period-bar,
   .widget-remove, .title-line .icon-btn, .viz figcaption .icon-btn { display: none !important; }

@@ -16,11 +16,6 @@ const (
 	maxCommentRunes       = 200
 )
 
-// dataFilter пропускает к модели строки из пользовательских данных:
-// заголовки, значения, комментарии. Невидимые символы и служебные токены
-// вырезаются, а значения, похожие на инструкцию, скрываются и считаются,
-// чтобы сказать пользователю, что защита сработала. Нулевой указатель
-// чистит без подсчёта.
 type dataFilter struct {
 	hidden int
 }
@@ -33,7 +28,6 @@ func (f *dataFilter) clean(s string, maxRunes int) string {
 	return out
 }
 
-// securityNote — пояснение для пользователя, если что-то скрыто от модели.
 func (f *dataFilter) securityNote() string {
 	if f == nil || f.hidden == 0 {
 		return ""
@@ -120,8 +114,6 @@ func buildSchemaContext(f *dataFilter, schema string, datasets []domain.Dataset,
 	return sb.String()
 }
 
-// buildToolContext — каталог для агента с инструментами: датасеты по именам,
-// без схем и таблиц, потому что SQL модель не пишет.
 func buildToolContext(f *dataFilter, datasets []domain.Dataset, relations []domain.Relation) string {
 	var sb strings.Builder
 	sources := map[string]struct{}{}
@@ -208,9 +200,6 @@ func formatTopValues(f *dataFilter, values []domain.ValueFrequency) string {
 	return strings.Join(parts, ", ")
 }
 
-// historyResultTurns — у скольких последних ответов модель видит строки
-// результата, historyResultRows — сколько строк. Этого хватает, чтобы
-// продолжить разговор о «втором пункте», и не раздувает контекст.
 const (
 	historyResultTurns = 2
 	historyResultRows  = 10
@@ -247,7 +236,6 @@ func formatHistory(f *dataFilter, turns []domain.Turn) []domain.ChatMessage {
 	return out
 }
 
-// historyRows — пронумерованные строки показанного результата.
 func historyRows(f *dataFilter, rs *domain.ResultSet) string {
 	if rs == nil || len(rs.Columns) == 0 || len(rs.Rows) == 0 {
 		return ""

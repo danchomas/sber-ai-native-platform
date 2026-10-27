@@ -1,8 +1,3 @@
-// Транспорт запросов к платформе.
-//
-// Ошибку API (единый формат {"error":{code,message,field}}) превращает
-// в Error с кодом: интерфейс показывает message как есть — он написан
-// для бизнес-пользователя, а не для разработчика.
 export class ApiError extends Error {
   constructor(message, code, field) {
     super(message);
@@ -44,9 +39,6 @@ export class HttpClient {
     return payload;
   }
 
-  // stream отправляет POST и читает ответ как поток событий
-  // (text/event-stream): onEvent(имя, данные) вызывается на каждое событие.
-  // Возвращает данные события «answer»; событие «error» становится ApiError.
   async stream(path, body, onEvent, { signal } = {}) {
     const resp = await fetch(this.baseUrl + path, {
       method: "POST",

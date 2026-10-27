@@ -64,7 +64,6 @@ func (c *fakeCatalog) Scopes(context.Context) ([]domain.Scope, error) {
 	return []domain.Scope{{Target: domain.QueryTarget{Schemas: []string{"raw"}}, Datasets: c.datasets}}, nil
 }
 
-// fakeExecutor вызывается из параллельного пересчёта виджетов.
 type fakeExecutor struct {
 	mu      sync.Mutex
 	result  *domain.ResultSet

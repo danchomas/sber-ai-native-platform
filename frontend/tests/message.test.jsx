@@ -1,5 +1,3 @@
-// Ответ агента: ход работы, переключатель вида и закрепление на дашборде.
-
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 

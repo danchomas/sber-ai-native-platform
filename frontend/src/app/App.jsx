@@ -11,9 +11,6 @@ import { useDatasets } from "../features/datasets/hooks/useDatasets.js";
 import { SourcesPage } from "../features/sources/SourcesPage.jsx";
 import { api } from "../shared/api/PlatformApi.js";
 
-// App связывает разделы и держит то немногое, что их переживает:
-// активный диалог, каталог и выбранный дашборд. Фичи друг о друге
-// не знают — они общаются через эти несколько значений.
 export function App() {
   const [view, setView] = useState("chat");
   const [openDashboardId, setOpenDashboardId] = useState(null);
@@ -28,7 +25,6 @@ export function App() {
     api.listDashboards().then((d) => setDashboardCount(d.length)).catch(() => {});
   }, []);
 
-  // Агент может собрать дашборд в ответ на вопрос — тогда переходим к нему.
   const showDashboard = useCallback((id) => {
     setOpenDashboardId(id);
     setView("dashboards");

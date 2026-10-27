@@ -50,8 +50,6 @@ func TestScreenRejectsAttacksWithoutModel(t *testing.T) {
 	}
 }
 
-// Косвенная инъекция: инструкция лежит в данных. Модель не должна её
-// увидеть ни в описании каталога, ни в результате инструмента.
 func TestAgentHidesInjectionInData(t *testing.T) {
 	catalog := newFakeCatalog()
 	cols := catalog.datasets[0].Columns
@@ -95,9 +93,6 @@ func TestAgentHidesInjectionInData(t *testing.T) {
 	}
 }
 
-// Изменяющие инструменты выдаются по вопросу пользователя. Модель,
-// которую «уговорили» данные, не может удалить виджет, если пользователь
-// о дашбордах не просил.
 func TestAgentGrantsDashboardToolsByQuestion(t *testing.T) {
 	widgetID, dashboardID := uuid.New(), uuid.New()
 	model := newToolLLM(
@@ -149,8 +144,6 @@ func TestAccessFor(t *testing.T) {
 	}
 }
 
-// leakingLLM пересказывает свой системный промпт — так ведёт себя модель,
-// которую уговорили раскрыть инструкции.
 type leakingLLM struct{ *toolLLM }
 
 func (l *leakingLLM) Converse(ctx context.Context, req domain.Completion) (domain.Reply, error) {
@@ -326,8 +319,6 @@ func sessionsWith(t *testing.T) *memorySessions {
 	return sessions
 }
 
-// Отклонённый вопрос не должен вернуться к модели через историю: ни текст
-// атаки, ни шаблонный отказ.
 func TestBlockedExchangeStaysOutOfHistory(t *testing.T) {
 	model := newToolLLM(domain.Reply{Content: "Здравствуйте!"})
 	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
@@ -345,8 +336,6 @@ func TestBlockedExchangeStaysOutOfHistory(t *testing.T) {
 	}
 }
 
-// Модель, которая «отвечает» числами без расчёта, получает напоминание
-// и считает по данным.
 func TestAgentNudgesTowardsTools(t *testing.T) {
 	model := newToolLLM(
 		domain.Reply{Content: "В июле продажи растут на 15%."},
@@ -398,7 +387,6 @@ func TestSecureCatchesPromptEcho(t *testing.T) {
 	}
 }
 
-// choiceLLM отказывает в tool_choice, как сервер, который его не знает.
 type choiceLLM struct {
 	*toolLLM
 	required []bool

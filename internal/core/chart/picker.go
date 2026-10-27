@@ -23,7 +23,6 @@ func Pick(rs *domain.ResultSet, title string) domain.ChartSpec {
 	})
 
 	switch {
-
 	case len(rs.Rows) == 1 && len(rs.Columns) == 1 && len(numeric) == 1:
 		spec.Type = domain.ChartTypeKPI
 		spec.Y = []string{rs.Columns[0].Name}

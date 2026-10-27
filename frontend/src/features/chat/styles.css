@@ -1,5 +1,3 @@
-/* Диалог с агентом. */
-
 .thread { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 .msg { display: flex; gap: 12px; }
 .msg .who {
@@ -33,8 +31,6 @@ details.sql pre {
 
 .composer { padding: 10px 24px 18px; }
 .composer-inner { max-width: var(--col); margin: 0 auto; }
-/* Поле ввода — отдельная приподнятая поверхность, как несущие элементы
-   в образце, а не полоса, приклеенная к низу экрана. */
 .composer-box {
   display: flex; gap: 10px; align-items: flex-end;
   background: var(--surface-1); border: 1px solid var(--border);
@@ -47,7 +43,6 @@ details.sql pre {
   flex: 1; border: 0; background: transparent; color: var(--text-primary);
   resize: none; font: inherit; max-height: 160px; outline: none;
 }
-/* Основное действие — зелёная «таблетка» с градиентом. */
 .send {
   border: 0; border-radius: var(--radius-control); padding: 10px 22px;
   background: var(--accent-gradient); color: var(--accent-contrast);
@@ -58,8 +53,6 @@ details.sql pre {
 .send:disabled { opacity: 0.5; cursor: default; }
 .hint { margin: 8px 2px 0; font-size: 12px; color: var(--text-muted); }
 
-
-/* Стартовый экран: мягкое свечение, крупная типографика и полезные сценарии. */
 .chat-view .view-head { border-bottom: 0; justify-content: space-between; min-height: 94px; }
 .chat-heading h2 { font-size: 15px; letter-spacing: -.02em; }
 .chat-heading p { margin-top: 3px; font-size: 11px; color: var(--text-muted); }
@@ -137,7 +130,6 @@ details.sql pre {
 
 @media (max-width: 360px) { .welcome h1 { font-size: 28px; } }
 
-/* Ход работы, пока ответ готовится. */
 .live-steps { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .live-steps li { display: grid; grid-template-columns: 18px 1fr; gap: 2px 8px; font-size: 13px; color: var(--text-secondary); animation: step-in .25s ease-out; }
 .live-steps .step-mark { color: var(--accent); font-weight: 700; }

@@ -63,8 +63,6 @@ func TestAgentAnswersThroughTools(t *testing.T) {
 }
 
 func TestAgentSendsCatalogAndToolsToModel(t *testing.T) {
-	// На ответ текстом без расчёта модель один раз получает напоминание
-	// опереться на инструменты; приветствие она просто повторяет.
 	model := newToolLLM(
 		domain.Reply{Content: "Здравствуйте! Спросите о данных."},
 		domain.Reply{Content: "Здравствуйте! Спросите о данных."},
@@ -297,7 +295,6 @@ func TestAgentParsesToolCallsFromText(t *testing.T) {
 func TestAgentStopsAfterMaxSteps(t *testing.T) {
 	var replies []domain.Reply
 	for i := range 10 {
-		// Аргументы разные: одинаковые вызовы цикл остановил бы раньше как повтор.
 		replies = append(replies, calls(call(fmt.Sprint("c", i), toolAggregate,
 			fmt.Sprintf(`{"dataset":"orders","group_by":["status"],"limit":%d}`, i+1))))
 	}
