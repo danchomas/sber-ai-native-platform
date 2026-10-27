@@ -25,6 +25,7 @@ func NewRouter(opts RouterOptions) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger(middleware.WithLogger(opts.Logger)))
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.CORS(opts.Config.HTTP.CORSOrigins))
 
 	r.Route("/api/v1", func(api chi.Router) {
