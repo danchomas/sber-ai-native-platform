@@ -92,8 +92,12 @@ export class PlatformApi {
     return this.http.get(`/dashboards?limit=${limit}`).then((r) => r?.dashboards ?? []);
   }
 
-  dashboard(id, refresh = true) {
-    return this.http.get(`/dashboards/${id}?refresh=${refresh}`);
+  // period — {from, to} в формате ГГГГ-ММ-ДД; применяется к виджетам с динамикой.
+  dashboard(id, refresh = true, period = null) {
+    const params = new URLSearchParams({ refresh: String(refresh) });
+    if (period?.from) params.set("from", period.from);
+    if (period?.to) params.set("to", period.to);
+    return this.http.get(`/dashboards/${id}?${params}`);
   }
 
   deleteDashboard(id) {

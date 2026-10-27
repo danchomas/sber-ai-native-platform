@@ -400,7 +400,7 @@ func TestDashboardRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	report := upload(t, e, "orders", ordersCSV)
-	svc := dashsvc.New(e.dashes, e.datasets, e.raw, queryCfg, testLogger())
+	svc := dashsvc.New(e.dashes, e.datasets, e.raw, queryCfg, true, testLogger())
 
 	created, err := svc.CreateFromWidgets(ctx, nil, "Сводка по заказам", "тест", []domain.Widget{
 		{
@@ -420,7 +420,7 @@ func TestDashboardRoundTrip(t *testing.T) {
 		t.Fatalf("создание дашборда: %v", err)
 	}
 
-	loaded, err := svc.Get(ctx, created.ID, true)
+	loaded, err := svc.Get(ctx, created.ID, true, domain.DateRange{})
 	if err != nil {
 		t.Fatalf("чтение дашборда: %v", err)
 	}
@@ -441,7 +441,7 @@ func TestDashboardRoundTrip(t *testing.T) {
 	if err := svc.Delete(ctx, created.ID); err != nil {
 		t.Fatalf("удаление дашборда: %v", err)
 	}
-	if _, err := svc.Get(ctx, created.ID, false); err == nil {
+	if _, err := svc.Get(ctx, created.ID, false, domain.DateRange{}); err == nil {
 		t.Fatal("удалённый дашборд всё ещё читается")
 	}
 }

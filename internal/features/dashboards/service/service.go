@@ -3,16 +3,19 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/apperr"
+	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
@@ -36,7 +39,10 @@ type Service struct {
 	catalog Catalog
 	exec    Executor
 	cfg     config.Query
-	log     *slog.Logger
+	// allowSQL — AGENT_ALLOW_RAW_SQL: принимать ли виджеты с готовым SQL
+	// вместо параметров запроса.
+	allowSQL bool
+	log      *slog.Logger
 }
 
 func New(
@@ -44,9 +50,10 @@ func New(
 	catalog Catalog,
 	exec Executor,
 	cfg config.Query,
+	allowSQL bool,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, catalog: catalog, exec: exec, cfg: cfg, log: log}
+	return &Service{repo: repo, catalog: catalog, exec: exec, cfg: cfg, allowSQL: allowSQL, log: log}
 }
 
 func (s *Service) CreateFromWidgets(
@@ -80,7 +87,12 @@ func (s *Service) List(ctx context.Context, limit int) ([]domain.Dashboard, erro
 	return s.repo.List(ctx, limit)
 }
 
-func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.Dashboard, error) {
+// Get возвращает панель. При refresh виджеты пересчитываются заново;
+// непустой period ограничивает виджеты с динамикой этим периодом.
+func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool, period domain.DateRange) (*domain.Dashboard, error) {
+	if err := validatePeriod(period); err != nil {
+		return nil, err
+	}
 	d, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -104,35 +116,85 @@ func (s *Service) Get(ctx context.Context, id uuid.UUID, refresh bool) (*domain.
 
 	for i := range d.Widgets {
 		g.Go(func() error {
-			sql, args, err := widgetQuery(d.Widgets[i], catalog, s.cfg.MaxRows)
-			if err != nil {
-				mu.Lock()
-				d.Widgets[i].Error = "запрос больше недоступен: " + err.Error()
-				mu.Unlock()
-				return nil
-			}
-			scope, checked, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows)
-			if err != nil {
-				mu.Lock()
-				d.Widgets[i].Error = "запрос больше недоступен: " + err.Error()
-				mu.Unlock()
-				return nil
-			}
-			result, err := s.exec.Query(gctx, scope.Target, checked.SQL, s.cfg.MaxRows, args...)
+			w := &d.Widgets[i]
+			result, applied, err := s.refreshWidget(gctx, *w, catalog, scopes, period)
 			mu.Lock()
 			defer mu.Unlock()
+			w.PeriodApplied = applied
 			if err != nil {
-				d.Widgets[i].Error = err.Error()
+				w.Error = s.widgetError(gctx, w.ID, err)
 				return nil
 			}
-			d.Widgets[i].Result = result
+			w.Result = result
+			w.Headline = chart.Headline(w.Chart, result)
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+
+	now := time.Now().UTC()
+	d.RefreshedAt = &now
+	d.DateRange = dateRange(d.Widgets, catalog)
+	if period.From != "" || period.To != "" {
+		d.Period = &period
+	}
 	return d, nil
+}
+
+func (s *Service) refreshWidget(
+	ctx context.Context,
+	w domain.Widget,
+	catalog analytics.Catalog,
+	scopes []domain.Scope,
+	period domain.DateRange,
+) (*domain.ResultSet, bool, error) {
+	sql, args, applied, err := widgetQuery(w, catalog, s.cfg.MaxRows, period)
+	if err != nil {
+		return nil, false, err
+	}
+	scope, checked, err := sqlguard.ResolveScope(sql, scopes, s.catalog.Schema(), s.cfg.MaxRows)
+	if err != nil {
+		return nil, applied, err
+	}
+	result, err := s.exec.Query(ctx, scope.Target, checked.SQL, s.cfg.MaxRows, args...)
+	return result, applied, err
+}
+
+// widgetError — понятная пользователю причина, по которой виджет не
+// пересчитан. Свои проверки платформы объясняют себя сами, а текст
+// ошибки базы уходит только в лог: он раскрывает устройство хранилища.
+func (s *Service) widgetError(ctx context.Context, widgetID uuid.UUID, err error) string {
+	switch {
+	case errors.Is(err, apperr.ErrValidation), errors.Is(err, apperr.ErrUnsafeQuery):
+		return "запрос больше недоступен: " + err.Error()
+	case errors.Is(err, apperr.ErrQueryTimeout):
+		return "показатель не успел пересчитаться: сузьте период"
+	}
+	s.log.ErrorContext(ctx, "виджет не пересчитан", "widget", widgetID, "error", err)
+	return "не удалось пересчитать показатель, попробуйте обновить панель"
+}
+
+const dateLayout = "2006-01-02"
+
+func validatePeriod(p domain.DateRange) error {
+	var from, to time.Time
+	var err error
+	if p.From != "" {
+		if from, err = time.Parse(dateLayout, p.From); err != nil {
+			return apperr.NewValidationError("from", "дата начала должна быть в формате ГГГГ-ММ-ДД")
+		}
+	}
+	if p.To != "" {
+		if to, err = time.Parse(dateLayout, p.To); err != nil {
+			return apperr.NewValidationError("to", "дата окончания должна быть в формате ГГГГ-ММ-ДД")
+		}
+	}
+	if p.From != "" && p.To != "" && to.Before(from) {
+		return apperr.NewValidationError("to", "дата окончания раньше даты начала")
+	}
+	return nil
 }
 
 func (s *Service) analyticsCatalog(ctx context.Context) (analytics.Catalog, error) {
@@ -149,20 +211,94 @@ func (s *Service) analyticsCatalog(ctx context.Context) (analytics.Catalog, erro
 
 // widgetQuery пересобирает SQL виджета из сохранённых параметров: так
 // виджет проходит текущую проверку каталога и переживает переименование
-// таблиц. Виджеты, у которых есть только SQL, выполняются как раньше.
-func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int) (string, []any, error) {
+// таблиц. Фильтр периода добавляется к параметрам, а не вклеивается
+// в SQL, и применяется только к виджетам с временной разбивкой. Виджеты,
+// у которых есть только SQL, выполняются как есть и фильтр не принимают.
+func widgetQuery(w domain.Widget, catalog analytics.Catalog, maxRows int, period domain.DateRange) (string, []any, bool, error) {
 	if len(w.Query) == 0 {
-		return w.SQL, nil, nil
+		return w.SQL, nil, false, nil
 	}
 	var q analytics.Query
 	if err := json.Unmarshal(w.Query, &q); err != nil {
-		return "", nil, fmt.Errorf("параметры виджета повреждены: %w", err)
+		return "", nil, false, fmt.Errorf("параметры виджета повреждены: %w", err)
 	}
+
+	applied := false
+	if q.Time != nil && (period.From != "" || period.To != "") {
+		if period.From != "" {
+			q.Filters = append(q.Filters, analytics.Filter{Column: q.Time.Column, Op: analytics.OpGte, Value: period.From})
+		}
+		if period.To != "" {
+			// Граница включительно: всё, что раньше следующего дня.
+			to, _ := time.Parse(dateLayout, period.To)
+			q.Filters = append(q.Filters, analytics.Filter{
+				Column: q.Time.Column, Op: analytics.OpLt, Value: to.AddDate(0, 0, 1).Format(dateLayout),
+			})
+		}
+		applied = true
+	}
+
 	compiled, err := analytics.Compile(q, catalog, maxRows)
 	if err != nil {
-		return "", nil, err
+		return "", nil, applied, err
 	}
-	return compiled.SQL, compiled.Args, nil
+	return compiled.SQL, compiled.Args, applied, nil
+}
+
+// dateRange — общий период данных виджетов с динамикой по профилю
+// каталога, без запросов к базе.
+func dateRange(widgets []domain.Widget, catalog analytics.Catalog) *domain.DateRange {
+	var out domain.DateRange
+	for _, w := range widgets {
+		var q analytics.Query
+		if len(w.Query) == 0 || json.Unmarshal(w.Query, &q) != nil || q.Time == nil {
+			continue
+		}
+		p := timeProfile(catalog, q.Dataset, q.Time.Column)
+		if p == nil || p.MinValue == nil || p.MaxValue == nil {
+			continue
+		}
+		minDay, maxDay := day(*p.MinValue), day(*p.MaxValue)
+		if minDay == "" || maxDay == "" {
+			continue
+		}
+		if out.From == "" || minDay < out.From {
+			out.From = minDay
+		}
+		if maxDay > out.To {
+			out.To = maxDay
+		}
+	}
+	if out.From == "" {
+		return nil
+	}
+	return &out
+}
+
+func timeProfile(catalog analytics.Catalog, dataset, column string) *domain.ColumnProfile {
+	for _, d := range catalog.Datasets {
+		if !strings.EqualFold(d.Name, dataset) && !strings.EqualFold(d.TableName, dataset) {
+			continue
+		}
+		for _, c := range d.Columns {
+			if strings.EqualFold(c.Name, column) || strings.EqualFold(c.SourceName, column) {
+				return c.Profile
+			}
+		}
+	}
+	return nil
+}
+
+// day берёт из значения профиля дату: профиль хранит её текстом базы,
+// например «2024-06-30» или «2024-06-30 12:00:00+00».
+func day(v string) string {
+	if len(v) < len(dateLayout) {
+		return ""
+	}
+	if _, err := time.Parse(dateLayout, v[:len(dateLayout)]); err != nil {
+		return ""
+	}
+	return v[:len(dateLayout)]
 }
 
 // Create собирает панель из виджетов, присланных интерфейсом: например,
@@ -214,6 +350,12 @@ func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widg
 	if len(w.Query) == 0 && strings.TrimSpace(w.SQL) == "" {
 		return w, apperr.NewValidationError("query", "у виджета нет запроса")
 	}
+	// Готовый SQL от клиента — тот же свободный SQL, что и от модели:
+	// по умолчанию виджет описывается только параметрами запроса.
+	if len(w.Query) == 0 && !s.allowSQL {
+		return w, fmt.Errorf("%w: виджет должен описываться параметрами запроса, свободный SQL отключён",
+			apperr.ErrUnsafeQuery)
+	}
 
 	catalog, err := s.analyticsCatalog(ctx)
 	if err != nil {
@@ -223,7 +365,7 @@ func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widg
 	if err != nil {
 		return w, err
 	}
-	sql, _, err := widgetQuery(w, catalog, s.cfg.MaxRows)
+	sql, _, _, err := widgetQuery(w, catalog, s.cfg.MaxRows, domain.DateRange{})
 	if err != nil {
 		return w, err
 	}
@@ -233,7 +375,7 @@ func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widg
 	if len(w.Query) > 0 {
 		w.SQL = sql
 	}
-	w.ID, w.Result, w.Error = uuid.Nil, nil, ""
+	w.ID, w.Result, w.Error, w.Headline = uuid.Nil, nil, "", nil
 	return w, nil
 }
 
