@@ -39,3 +39,17 @@ type ChartSpec struct {
 	Unit     string    `json:"unit,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
 }
+
+// Headline — главное в результате: одно число и фраза для
+// бизнес-пользователя. Считается платформой по строкам результата,
+// а не моделью, поэтому числа в ней всегда совпадают с графиком.
+type Headline struct {
+	// Label — что это за число: «Последний период · 06.2024», «Лидер · Москва».
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+	// ChangePct — изменение к предыдущему периоду в процентах, для динамики.
+	ChangePct *float64 `json:"change_pct,omitempty"`
+	// SharePct — доля лидера в сумме, для сравнения категорий.
+	SharePct *float64 `json:"share_pct,omitempty"`
+	Text     string   `json:"text"`
+}
