@@ -2,7 +2,9 @@ package service
 
 import (
 	"encoding/json"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -91,7 +93,58 @@ func widgetsSchema() schema {
 	}, "result_id"), "виджеты")
 }
 
-func agentTools(allowSQL bool) []domain.ToolSpec {
+// toolAccess — какие изменяющие инструменты доступны модели в этом
+// вопросе. Права выдаются по вопросу пользователя, а не по решению модели:
+// инструкция, спрятанная в данных, не может «попросить» удалить виджет,
+// потому что в этом вопросе такого инструмента у модели просто нет.
+type toolAccess struct {
+	createDashboards bool
+	editDashboards   bool
+	removeWidgets    bool
+}
+
+var (
+	dashboardIntent = regexp.MustCompile(`дашборд|панел|виджет|отч[её]т|сводк|закреп|dashboard|widget|report`)
+	editIntent      = regexp.MustCompile(`дашборд|панел|виджет|закреп|dashboard|widget`)
+	removeIntent    = regexp.MustCompile(`убер|убра|удал|сними|снять|снеси|замени|убрать|очисти|remove|delete|replace`)
+)
+
+func accessFor(question string) toolAccess {
+	q := strings.ToLower(question)
+	edit := editIntent.MatchString(q)
+	return toolAccess{
+		createDashboards: dashboardIntent.MatchString(q),
+		editDashboards:   edit,
+		removeWidgets:    edit && removeIntent.MatchString(q),
+	}
+}
+
+// mutating сообщает, что инструмент меняет сохранённое состояние платформы.
+func mutating(name string) bool {
+	switch name {
+	case toolDashboard, toolAddWidgets, toolRemove:
+		return true
+	}
+	return false
+}
+
+func (a toolAccess) allows(name string) bool {
+	switch name {
+	case toolDashboard:
+		return a.createDashboards
+	case toolAddWidgets:
+		return a.editDashboards
+	case toolRemove:
+		return a.removeWidgets
+	}
+	return true
+}
+
+// fullAccess — набор для описаний вне диалога (MCP отбирает из него
+// только инструменты чтения).
+var fullAccess = toolAccess{createDashboards: true, editDashboards: true, removeWidgets: true}
+
+func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 	tools := []struct {
 		name, desc string
 		params     schema
@@ -202,6 +255,7 @@ func agentTools(allowSQL bool) []domain.ToolSpec {
 		},
 	}
 	tools = append(tools, insightTools()...)
+	tools = append(tools, segmentTools()...)
 	if allowSQL {
 		tools = append(tools, struct {
 			name, desc string
@@ -216,6 +270,9 @@ func agentTools(allowSQL bool) []domain.ToolSpec {
 
 	out := make([]domain.ToolSpec, 0, len(tools))
 	for _, t := range tools {
+		if !access.allows(t.name) {
+			continue
+		}
 		params, err := json.Marshal(t.params)
 		if err != nil {
 			panic("схема инструмента " + t.name + ": " + err.Error())

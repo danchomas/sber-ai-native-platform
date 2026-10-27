@@ -117,7 +117,7 @@ func run() error {
 			provhttp.New(providers),
 			chathttp.New(chat),
 			dashhttp.New(dashboards),
-			queryhttp.New(datasets, rawRepo, cfg.Query),
+			queryhttp.New(datasets, rawRepo, cfg.Query, cfg.Agent.AllowRawSQL),
 			mcphttp.New(chat, version),
 		},
 	})

@@ -7,7 +7,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-func buildOverviewFacts(schema string, datasets []domain.Dataset, relations []domain.Relation) string {
+func buildOverviewFacts(f *dataFilter, schema string, datasets []domain.Dataset, relations []domain.Relation) string {
 	var sb strings.Builder
 
 	var totalRows int64
@@ -19,7 +19,7 @@ func buildOverviewFacts(schema string, datasets []domain.Dataset, relations []do
 		}
 	}
 	fmt.Fprintf(&sb, "Загружено датасетов: %d, суммарно строк: %s.\n", ready, formatInt(totalRows))
-	sb.WriteString(buildSchemaContext(schema, datasets, relations))
+	sb.WriteString(buildSchemaContext(f, schema, datasets, relations))
 	return sb.String()
 }
 

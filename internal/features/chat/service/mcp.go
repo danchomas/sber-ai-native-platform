@@ -17,10 +17,11 @@ import (
 var dataTools = []string{
 	toolDescribe, toolAggregate, toolRows, toolDuplicates,
 	toolSeasonality, toolCorrelate, toolForecast, toolAnomalies,
+	toolCompare, toolWhatIf,
 }
 
 func (s *Service) DataTools() []domain.ToolSpec {
-	all := agentTools(false)
+	all := agentTools(false, fullAccess)
 	out := make([]domain.ToolSpec, 0, len(dataTools))
 	for _, t := range all {
 		if slices.Contains(dataTools, t.Name) {
@@ -70,5 +71,5 @@ func (s *Service) DataContext(ctx context.Context) (string, error) {
 	if err != nil {
 		s.log.WarnContext(ctx, "связи каталога недоступны", "error", err)
 	}
-	return buildToolContext(datasets, relations), nil
+	return buildToolContext(nil, datasets, relations), nil
 }

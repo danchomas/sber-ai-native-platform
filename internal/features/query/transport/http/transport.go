@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -16,13 +17,17 @@ import (
 )
 
 type Handler struct {
-	catalog Catalog
-	exec    Executor
-	cfg     config.Query
+	catalog  Catalog
+	exec     Executor
+	cfg      config.Query
+	allowSQL bool
 }
 
-func New(catalog Catalog, exec Executor, cfg config.Query) *Handler {
-	return &Handler{catalog: catalog, exec: exec, cfg: cfg}
+// New создаёт обработчик свободного SQL. allowSQL — AGENT_ALLOW_RAW_SQL:
+// свободный SQL, от модели или от клиента, принимается только вместе.
+// По умолчанию запросы строятся только из параметров через компилятор.
+func New(catalog Catalog, exec Executor, cfg config.Query, allowSQL bool) *Handler {
+	return &Handler{catalog: catalog, exec: exec, cfg: cfg, allowSQL: allowSQL}
 }
 
 type queryRequest struct {
@@ -38,6 +43,10 @@ type queryResponse struct {
 }
 
 func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
+	if !h.allowSQL {
+		response.Error(w, r, fmt.Errorf("%w: свободный SQL отключён (AGENT_ALLOW_RAW_SQL=false)", apperr.ErrUnsafeQuery))
+		return
+	}
 	var req queryRequest
 	if err := request.Decode(r, &req); err != nil {
 		response.Error(w, r, err)

@@ -30,7 +30,9 @@ func (f *fakeTools) CallTool(_ context.Context, name string, args []byte) (strin
 	return `{"result_id":"r1"}`, false, nil
 }
 
-func (f *fakeTools) DataContext(context.Context) (string, error) { return "ДАТАСЕТ «orders»", nil }
+func (f *fakeTools) DataContext(context.Context) (string, error) {
+	return "ДАТАСЕТ «orders»", nil
+}
 
 func rpc(t *testing.T, h http.Handler, body string) (int, map[string]any) {
 	t.Helper()
