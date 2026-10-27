@@ -141,6 +141,52 @@ func Pearson(xs, ys []float64) (float64, bool) {
 	return sxy / math.Sqrt(sxx*syy), true
 }
 
+// Regression — линейная зависимость y от x по парам наблюдений:
+// y ≈ Intercept + Slope·x. R2 — доля разброса y, которую объясняет x;
+// Elasticity — на сколько процентов меняется y при изменении x на 1%
+// в средней точке.
+type Regression struct {
+	Slope      float64
+	Intercept  float64
+	R2         float64
+	Elasticity float64
+	Pairs      int
+}
+
+// minRegressionPairs — меньше пар наблюдений оценка зависимости
+// превращается в гадание.
+const minRegressionPairs = 6
+
+// Fit оценивает зависимость y от x методом наименьших квадратов.
+func Fit(xs, ys []float64) (Regression, error) {
+	if len(xs) != len(ys) {
+		return Regression{}, errors.New("ряды разной длины")
+	}
+	if len(xs) < minRegressionPairs {
+		return Regression{}, fmt.Errorf("для оценки зависимости нужно хотя бы %d периодов, есть %d", minRegressionPairs, len(xs))
+	}
+	mx, my := mean(xs), mean(ys)
+	var sxy, sxx, syy float64
+	for i := range xs {
+		dx, dy := xs[i]-mx, ys[i]-my
+		sxy += dx * dy
+		sxx += dx * dx
+		syy += dy * dy
+	}
+	if sxx == 0 {
+		return Regression{}, errors.New("показатель-драйвер не менялся: по истории нельзя оценить его влияние")
+	}
+	reg := Regression{Slope: sxy / sxx, Pairs: len(xs)}
+	reg.Intercept = my - reg.Slope*mx
+	if syy > 0 {
+		reg.R2 = sxy * sxy / (sxx * syy)
+	}
+	if my != 0 {
+		reg.Elasticity = reg.Slope * mx / my
+	}
+	return reg, nil
+}
+
 // LagCorrelation — корреляция x[t] и y[t+lag] для лагов 0..maxLag по
 // общим периодам двух рядов: «изменения X предшествуют росту Y на N периодов?».
 type LagCorrelation struct {
