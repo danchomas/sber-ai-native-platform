@@ -10,10 +10,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Headline выбирает главное в результате по форме графика: для динамики —
-// последнее значение и изменение к предыдущему периоду, для сравнения
-// категорий — лидера и его долю, для показателя — само число. Для форм,
-// где одно число ничего не скажет (точки, распределение, серии), — nil.
 func Headline(spec domain.ChartSpec, rs *domain.ResultSet) *domain.Headline {
 	if rs == nil || len(rs.Rows) == 0 {
 		return nil
@@ -109,7 +105,7 @@ func leader(rs *domain.ResultSet, cat, metric int, name string) *domain.Headline
 		Value: bestValue,
 		Text:  fmt.Sprintf("Больше всего — «%s»: %s", label, Human(bestValue)),
 	}
-	// Доля честна, только если видны все строки и нет отрицательных значений.
+
 	if !negative && !rs.Truncated && total > 0 {
 		share := round1(bestValue / total * 100)
 		h.SharePct = &share
@@ -178,7 +174,6 @@ func period(v any) string {
 	return fmt.Sprint(v)
 }
 
-// Human — число для фразы: «1,2 млн», «12,5 тыс.», «3,75».
 func Human(v float64) string {
 	abs := math.Abs(v)
 	switch {

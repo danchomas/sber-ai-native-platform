@@ -57,13 +57,10 @@ type Service struct {
 	agent      config.Agent
 	log        *slog.Logger
 
-	// noTools помнит модели, которые отказали в function calling, чтобы
-	// не тратить на них лишний запрос перед каждым вопросом.
 	noTools sync.Map
-	// noToolChoice помнит модели, сервер которых не принимает
-	// tool_choice: "required".
+
 	noToolChoice sync.Map
-	// slots ограничивает число вопросов, которые агент ведёт одновременно.
+
 	slots chan struct{}
 }
 
@@ -84,8 +81,6 @@ func New(
 	}
 }
 
-// acquire занимает место в очереди агента. Свободного места вопрос ждёт
-// не дольше AGENT_QUEUE_WAIT, затем получает apperr.ErrBusy.
 func (s *Service) acquire(ctx context.Context) (func(), error) {
 	release := func() { <-s.slots }
 	select {
@@ -110,9 +105,6 @@ func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string)
 	return s.AskWithProgress(ctx, sessionID, question, nil)
 }
 
-// AskWithProgress — Ask с наблюдателем шагов агента: progress получает
-// каждый шаг по мере выполнения, чтобы интерфейс показывал ход работы,
-// пока ответ готовится. Вызывается в той же горутине; может быть nil.
 func (s *Service) AskWithProgress(
 	ctx context.Context,
 	sessionID uuid.UUID,
@@ -210,8 +202,6 @@ func (s *Service) answer(
 	return answer
 }
 
-// respond выбирает путь ответа: агент с инструментами, план в JSON или,
-// без модели, описание данных по профилю каталога.
 func (s *Service) respond(ctx context.Context, in agentInput) *domain.Answer {
 	datasets, relations, question := in.datasets, in.relations, in.question
 
@@ -255,8 +245,6 @@ func (s *Service) respond(ctx context.Context, in agentInput) *domain.Answer {
 
 	case domain.IntentDashboard:
 		if !accessFor(question).createDashboards {
-			// Дашборд меняет сохранённое состояние, поэтому собирается только
-			// по прямой просьбе пользователя, а не по решению модели.
 			return &domain.Answer{
 				Intent: domain.IntentClarify,
 				Text:   "Собрать по этому вопросу дашборд? Напишите, например: «собери дашборд с этими показателями».",
@@ -521,8 +509,6 @@ func (e *execution) queryJSON() json.RawMessage {
 	return out
 }
 
-// candidate — то, что предложила модель: параметры запроса или, если
-// разрешён свободный SQL, текст запроса.
 type candidate struct {
 	sql   string
 	query *analytics.Query
@@ -547,8 +533,6 @@ func (s *Service) analyticsCatalog(datasets []domain.Dataset, relations []domain
 	return analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()}
 }
 
-// compile превращает предложение модели в SQL с параметрами. Свободный
-// SQL принимается, только если он явно разрешён.
 func (s *Service) compile(c candidate, catalog analytics.Catalog) (string, []any, []string, error) {
 	if c.query != nil {
 		compiled, err := analytics.Compile(*c.query, catalog, s.cfg.MaxRows)
@@ -711,9 +695,6 @@ func humanReason(err error) string {
 	return msg
 }
 
-// failure — ответ на внутренний сбой. Подробности уходят в лог, а не
-// пользователю: текст ошибки базы или модели ему ничего не скажет и
-// раскрывает устройство платформы.
 func (s *Service) failure(ctx context.Context, text string, err error) *domain.Answer {
 	s.log.ErrorContext(ctx, "сбой при подготовке ответа", "error", err)
 	return &domain.Answer{Intent: domain.IntentReject, Text: text}

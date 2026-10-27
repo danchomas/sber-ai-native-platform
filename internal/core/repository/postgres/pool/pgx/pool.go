@@ -15,8 +15,7 @@ const defaultPingTimeout = 10 * time.Second
 
 type PoolOptions struct {
 	DSN string
-	// User и Password заменяют учётные данные из DSN: так пул роли чтения
-	// подключается к той же базе другой ролью.
+
 	User              string
 	Password          string
 	MaxConns          int32

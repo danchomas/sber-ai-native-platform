@@ -40,8 +40,7 @@ type HTTP struct {
 type Postgres struct {
 	DSN       string
 	RawSchema string
-	// ReaderRole — роль, под которой выполняются аналитические запросы.
-	// Пустое значение отключает её, и запросы идут от владельца базы.
+
 	ReaderRole        string
 	MaxConns          int32
 	MinConns          int32
@@ -78,19 +77,13 @@ type Query struct {
 	HistoryDepth int
 }
 
-// Agent — цикл агента с инструментами.
 type Agent struct {
-	// MaxSteps — сколько раз модель может обратиться к инструментам за один вопрос.
 	MaxSteps int
-	// AllowRawSQL открывает модели инструмент run_sql. По умолчанию выключен:
-	// модель работает только типизированными инструментами и SQL не пишет.
+
 	AllowRawSQL bool
-	// MaxConcurrent — сколько вопросов агент обрабатывает одновременно.
-	// Локальная модель обслуживает запросы по очереди, и без предела
-	// один клиент мог бы занять её надолго.
+
 	MaxConcurrent int
-	// QueueWait — сколько вопрос ждёт свободного места, прежде чем
-	// пользователь получит «ассистент занят».
+
 	QueueWait time.Duration
 }
 

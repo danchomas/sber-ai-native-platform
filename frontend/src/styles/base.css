@@ -1,10 +1,6 @@
-/* Палитра: нейтральные поверхности, зелёный акцент и мягкое свечение.
-   Цвета графиков сохраняют отдельную категориальную шкалу. */
-
 :root {
   color-scheme: light;
 
-  /* Подложка — мягкий мятный градиент, поверхности белые. */
   --page: #f3f7f5;
   --page-gradient: radial-gradient(ellipse at 8% 95%, #c7edc9 0%, transparent 52%), radial-gradient(ellipse at 92% 5%, #cceeea 0%, transparent 50%), radial-gradient(ellipse at 60% 65%, #e2f3ed 0%, transparent 65%), linear-gradient(135deg, #f7faf7, #eff5f5);
   --surface-1: #ffffff;
@@ -33,7 +29,6 @@
   --warning: #996000;
   --critical: #bd3434;
 
-  /* Категориальная схема — см. примечание выше, не менять под бренд. */
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -46,13 +41,7 @@
   --seq-400: #21d241;
   --seq-700: #0b4a22;
 
-  /* Форма: «таблетки» у управляющих элементов, сквиркл у карточек. */
-  --radius: 22px;        /* карточки, панели */
-  --radius-sm: 12px;      /* вложенные поверхности */
-  --radius-control: 12px; /* кнопки, вкладки, чипы */
-
-  /* Предельная ширина колонок. Строка длиннее ~90 символов читается
-     плохо, поэтому текст и диалог уже, а таблицы и панели шире. */
+  --radius: 22px;  --radius-sm: 12px;  --radius-control: 12px;
   --col: 900px;
   --col-wide: 1320px;
 
@@ -60,8 +49,6 @@
   --tracking-display: -0.025em;
 }
 
-/* Тёмная тема — тот же язык, перевёрнутый: зелёный остаётся единственным
-   акцентом, подложка уходит в тёмно-зелёный, а не в нейтральный чёрный. */
 :root[data-theme="dark"] {
   color-scheme: dark;
 
@@ -117,9 +104,6 @@ body {
   font: 15px/1.5 var(--font);
   -webkit-font-smoothing: antialiased;
 }
-/* Каркас держит #root: именно в него монтируется React, а body
-   остаётся обычным блоком. Раньше флекс стоял на body — и панель
-   с рабочей областью вставали друг под друга вместо «рядом». */
 #root {
   display: flex;
   height: 100dvh;
@@ -128,18 +112,12 @@ body {
 
 button { font: inherit; cursor: pointer; }
 
-/* Заголовки крупные и с плотным кернингом — так набран образец.
-   Сам шрифт фирменный и в поставку не входит: берём системный гротеск
-   и воспроизводим ритм, а не гарнитуру. */
 h1, h2, h3, h4 {
   margin: 0;
   font-weight: 700;
   letter-spacing: var(--tracking-display);
 }
 
-/* ── Боковая панель ─────────────────────────────────────────────── */
-
-/* Управляющие элементы — «таблетки», как в образце. */
 .icon-btn {
   display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--border); background: var(--surface-2);
@@ -153,10 +131,6 @@ h1, h2, h3, h4 {
 }
 .icon-btn:disabled { opacity: .5; cursor: default; }
 .icon-btn.icon-only { padding: 6px; }
-
-/* ── Основная область ───────────────────────────────────────────── */
-
-/* ── Чат ────────────────────────────────────────────────────────── */
 
 .card {
   background: var(--surface-1); border: 1px solid var(--border);
@@ -186,8 +160,6 @@ h1, h2, h3, h4 {
   border-color: color-mix(in srgb, var(--critical) 40%, transparent);
 }
 
-/* ── Данные ─────────────────────────────────────────────────────── */
-
 .grid { display: grid; gap: 16px; }
 
 table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -205,9 +177,6 @@ table.data tbody tr:hover { background: var(--surface-2); }
   background: var(--surface-1);
 }
 
-/* ── Визуализации ───────────────────────────────────────────────── */
-
-/* ── Дашборды ───────────────────────────────────────────────────── */
 .empty { color: var(--text-muted); text-align: center; padding: 60px 20px; }
 .empty h3 { color: var(--text-secondary); margin-bottom: 8px; }
 .spinner {
@@ -221,8 +190,6 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .muted { color: var(--text-muted); font-size: 13px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-/* Карточки каталога и источников: общие примитивы. */
-
 .ds-head { display: flex; align-items: flex-start; gap: 12px; }
 .ds-head h3 { font-size: 16px; }
 .ds-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
@@ -234,7 +201,6 @@ table.data tbody tr:hover { background: var(--surface-2); }
 }
 .tag em { font-style: normal; color: var(--text-muted); }
 
-/* Общие состояния доступны с клавиатуры и различимы в обеих темах. */
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
 button, a, input, textarea { -webkit-tap-highlight-color: transparent; }
 button { touch-action: manipulation; }

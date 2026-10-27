@@ -1,8 +1,6 @@
 import { Table } from "../../../shared/charts/Chart.jsx";
 import { fmtNum } from "../../../shared/lib/format.js";
 
-// ProfileBlock — сводка «что это за данные»: охват по времени, кандидаты
-// в ключи, дубликаты, выведенные связи и пример строк.
 export function ProfileBlock({ profile, theme }) {
   if (!profile) return null;
 

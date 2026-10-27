@@ -267,8 +267,6 @@ func (d *fakeDashboards) CreateFromWidgets(
 	return &dash, nil
 }
 
-// toolLLM — модель с function calling: на каждый ход разговора отдаёт
-// следующий заготовленный ответ и запоминает, что ей прислали.
 type toolLLM struct {
 	*scriptedLLM
 	mu       sync.Mutex
@@ -302,7 +300,6 @@ func (l *toolLLM) conversations() int {
 	return len(l.requests)
 }
 
-// toolMessages возвращает ответы инструментов из последнего запроса к модели.
 func (l *toolLLM) toolMessages() []domain.ChatMessage {
 	l.mu.Lock()
 	defer l.mu.Unlock()

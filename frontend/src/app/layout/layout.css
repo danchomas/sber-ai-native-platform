@@ -1,4 +1,3 @@
-/* Общая сетка приложения. */
 .sidebar {
   width: 256px; flex: 0 0 256px; display: flex; flex-direction: column;
   gap: 24px; margin: 16px 0 16px 16px; padding: 26px 16px 14px;

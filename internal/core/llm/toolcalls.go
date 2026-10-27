@@ -7,10 +7,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// ToolCallsFromText достаёт вызовы инструментов, которые модель написала
-// текстом вместо поля tool_calls. Так делают малые модели, когда шаблон
-// сервера не распознал вызов: в тегах <tool_call> или голым JSON.
-// Учитываются только инструменты, которые known признаёт своими.
 func ToolCallsFromText(s string, known func(name string) bool) []domain.ToolCall {
 	var chunks []string
 	rest := s

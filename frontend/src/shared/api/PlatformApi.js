@@ -1,7 +1,3 @@
-// Единственное место, где интерфейс знает адреса платформы.
-//
-// Методы сгруппированы по фичам бэкенда: так понятнее, какой вызов
-// к какой вертикали относится.
 import { HttpClient } from "./HttpClient.js";
 
 export class PlatformApi {
@@ -13,7 +9,6 @@ export class PlatformApi {
     return this.http.get("/health");
   }
 
-  // ── Каталог данных ────────────────────────────────────────────────
   listDatasets() {
     return this.http.get("/datasets").then((r) => r?.datasets ?? []);
   }
@@ -45,7 +40,6 @@ export class PlatformApi {
     return this.http.get("/catalog/relations").then((r) => r?.relations ?? []);
   }
 
-  // ── Внешние источники ─────────────────────────────────────────────
   listSources() {
     return this.http.get("/sources").then((r) => r?.sources ?? []);
   }
@@ -66,7 +60,6 @@ export class PlatformApi {
     return this.http.del(`/sources/${id}`);
   }
 
-  // ── Диалоги ───────────────────────────────────────────────────────
   listSessions(limit = 50) {
     return this.http.get(`/sessions?limit=${limit}`).then((r) => r?.sessions ?? []);
   }
@@ -87,19 +80,16 @@ export class PlatformApi {
     return this.http.post(`/sessions/${sessionId}/messages`, { question });
   }
 
-  // askStream — тот же вопрос, но шаги агента приходят по мере выполнения.
   askStream(sessionId, question, onStep) {
     return this.http.stream(`/sessions/${sessionId}/messages/stream`, { question }, (name, data) => {
       if (name === "step") onStep?.(data);
     });
   }
 
-  // ── Панели ────────────────────────────────────────────────────────
   listDashboards(limit = 50) {
     return this.http.get(`/dashboards?limit=${limit}`).then((r) => r?.dashboards ?? []);
   }
 
-  // period — {from, to} в формате ГГГГ-ММ-ДД; применяется к виджетам с динамикой.
   dashboard(id, refresh = true, period = null) {
     const params = new URLSearchParams({ refresh: String(refresh) });
     if (period?.from) params.set("from", period.from);
@@ -127,7 +117,6 @@ export class PlatformApi {
     return this.http.del(`/dashboards/${dashboardId}/widgets/${widgetId}`);
   }
 
-  // ── Ad-hoc SQL ────────────────────────────────────────────────────
   runQuery(sql, maxRows) {
     return this.http.post("/query", { sql, max_rows: maxRows ?? 0 });
   }

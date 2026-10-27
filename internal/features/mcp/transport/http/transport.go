@@ -1,8 +1,3 @@
-// Package http — MCP-сервер платформы (Model Context Protocol, транспорт
-// Streamable HTTP, ответы JSON). Внешний агент — Claude Desktop, IDE или
-// свой — получает те же инструменты, что встроенный: описать данные,
-// посчитать агрегаты, найти сезонность, построить прогноз. SQL он не
-// пишет, как и встроенная модель.
 package http
 
 import (
@@ -20,7 +15,6 @@ import (
 
 const maxRequestBytes = 1 << 20
 
-// Поддерживаемые версии протокола, новая — первой.
 var protocolVersions = []string{"2025-06-18", "2025-03-26", "2024-11-05"}
 
 type Tools interface {
@@ -40,7 +34,7 @@ func New(tools Tools, version string) *Handler {
 
 func (h *Handler) Register(r chi.Router) {
 	r.Post("/mcp", h.Serve)
-	// GET открывает поток уведомлений сервера; их у платформы нет.
+
 	r.Get("/mcp", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
@@ -92,7 +86,6 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Уведомления (без id) ответа не требуют.
 	if len(req.ID) == 0 {
 		w.WriteHeader(http.StatusAccepted)
 		return

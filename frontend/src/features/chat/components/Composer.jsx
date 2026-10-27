@@ -1,8 +1,6 @@
 import { useRef, useState } from "react";
 import { Icon } from "../../../shared/ui/Icon.jsx";
 
-// Composer: Enter отправляет, Shift+Enter переносит строку.
-// Поле растёт под текст — вопросы бывают длинными.
 export function Composer({ busy, disabled, onAsk }) {
   const [value, setValue] = useState("");
   const area = useRef(null);

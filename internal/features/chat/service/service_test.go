@@ -43,7 +43,6 @@ func newTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dash
 	return newTestAgentWith(t, testAgentConfig(), model, exec, dashboards)
 }
 
-// newSQLTestAgent — агент в режиме AGENT_ALLOW_RAW_SQL: план содержит SQL.
 func newSQLTestAgent(t *testing.T, model domain.LLM, exec Executor, dashboards Dashboards) (*Service, uuid.UUID, *memorySessions) {
 	t.Helper()
 	cfg := testAgentConfig()
@@ -102,7 +101,6 @@ func TestAskQueryHappyPath(t *testing.T) {
 }
 
 func TestAskRepairsUnsafeSQL(t *testing.T) {
-
 	model := newScriptedLLM(`{"intent":"query","sql":"DELETE FROM raw.ds_orders"}`)
 	model.repair = []string{`{"sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`}
 	model.narration = "Готово."
@@ -311,7 +309,6 @@ func TestAskValidatesQuestion(t *testing.T) {
 }
 
 func TestNarrationFallback(t *testing.T) {
-
 	model := newScriptedLLM(`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`)
 	svc, sessionID, _ := newSQLTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
 

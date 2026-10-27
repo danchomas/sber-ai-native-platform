@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 
 import { PRESETS, fmtDay, presetRange, samePeriod } from "../lib/period.js";
 
-// PeriodBar — общий фильтр периода панели. Фильтр уходит на сервер
-// параметрами и добавляется к запросу каждого виджета с динамикой.
 export function PeriodBar({ range, period, onChange }) {
   const [from, setFrom] = useState(period?.from || "");
   const [to, setTo] = useState(period?.to || "");

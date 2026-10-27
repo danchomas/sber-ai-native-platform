@@ -1,8 +1,5 @@
 import { fmtCompact } from "../lib/format.js";
 
-// Headline показывает главное в результате: число, что это за число,
-// и изменение к прошлому периоду или долю лидера. Всё посчитано
-// платформой по строкам результата, поэтому совпадает с графиком.
 export function Headline({ headline, compact = false }) {
   if (!headline) return null;
   const change = headline.change_pct;

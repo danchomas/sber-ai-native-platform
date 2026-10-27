@@ -2,11 +2,6 @@ import { Chart } from "../../../shared/charts/Chart.jsx";
 import { Headline } from "../../../shared/ui/Headline.jsx";
 import { Icon } from "../../../shared/ui/Icon.jsx";
 
-// Widget занимает долю сетки из 12 колонок — ширину выбрал агент под тип
-// визуализации: показатель узкий, динамика во всю ширину.
-//
-// Заголовок и главное число виджет рисует сам, поэтому графику заголовок
-// не передаётся — иначе он повторился бы дважды.
 export function Widget({ widget, theme, filtered, onRemove }) {
   const span = Math.min(Math.max(widget.width || 6, 1), 12);
   const spec = widget.chart ? { ...widget.chart, title: "" } : { type: "table" };

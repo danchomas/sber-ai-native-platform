@@ -58,9 +58,6 @@ func TestInferRole(t *testing.T) {
 }
 
 func TestInferRoleRejectsLowCardinalityIntegerIdentifiers(t *testing.T) {
-	// «Номер позиции»: пять значений на полмиллиона строк. Называется
-	// идентификатором, но ничего не идентифицирует — и давал ложные
-	// связи со всякой другой последовательностью 1..N.
 	col := domain.Column{Name: "nomer_pozicii", SourceName: "Номер позиции", Type: domain.ColumnTypeInteger}
 	prof := &domain.ColumnProfile{RowCount: 500000, DistinctCount: 5}
 
@@ -79,8 +76,6 @@ func TestInferRoleKeepsGenuineIntegerIdentifier(t *testing.T) {
 }
 
 func TestInferRoleKeepsTextIdentifierRegardlessOfCardinality(t *testing.T) {
-	// Текстовые коды идентифицируют по своей природе: правило про
-	// количество значений к ним не применяется.
 	col := domain.Column{Name: "kod_magazina", SourceName: "Код магазина", Type: domain.ColumnTypeText}
 	prof := &domain.ColumnProfile{RowCount: 500000, DistinctCount: 128}
 

@@ -1,9 +1,3 @@
--- Прямое подключение к внешним базам данных.
---
--- Датасет перестаёт быть синонимом «загруженный CSV»: теперь у него есть
--- происхождение. Загруженные файлы лежат в собственной схеме платформы,
--- подключённые таблицы — во внешнем источнике и только читаются.
-
 CREATE TABLE IF NOT EXISTS sources (
     id          uuid        PRIMARY KEY,
     name        text        NOT NULL UNIQUE,
@@ -23,9 +17,6 @@ ALTER TABLE datasets
 ALTER TABLE datasets
     ADD CONSTRAINT datasets_origin_check CHECK (origin IN ('uploaded', 'attached'));
 
--- Ранее имя физической таблицы было уникальным глобально. С внешними
--- источниками одно и то же имя может встретиться в разных базах, поэтому
--- уникальна тройка «источник + схема + таблица».
 ALTER TABLE datasets DROP CONSTRAINT IF EXISTS datasets_table_name_key;
 
 CREATE UNIQUE INDEX IF NOT EXISTS datasets_physical_idx ON datasets (

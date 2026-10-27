@@ -5,10 +5,6 @@ import { ErrorBanner } from "../../../shared/ui/ErrorBanner.jsx";
 
 const PLACEHOLDER = "postgres://user:password@host:5432/dbname?sslmode=disable";
 
-// AttachDialog запрашивает строку подключения.
-//
-// Строка хранится в базе платформы и наружу не отдаётся: API помечает её
-// как секрет и не возвращает ни в одном ответе.
 export function AttachDialog({ onClose, onAttach }) {
   const [name, setName] = useState("");
   const [dsn, setDsn] = useState("");

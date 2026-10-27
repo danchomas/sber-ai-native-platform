@@ -117,9 +117,6 @@ func MaxBody(limit int64) func(http.Handler) http.Handler {
 	}
 }
 
-// SecurityHeaders запрещает браузеру исполнять ответы API как страницу:
-// JSON не превратится в HTML, его нельзя встроить во фрейм, а CSP без
-// единого разрешённого источника не даст выполнить ни один скрипт.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()

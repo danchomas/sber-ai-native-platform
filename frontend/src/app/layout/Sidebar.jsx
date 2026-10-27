@@ -2,7 +2,6 @@ import { VIEWS } from "../navigation.js";
 import { fmtDateTime } from "../../shared/lib/format.js";
 import { Icon } from "../../shared/ui/Icon.jsx";
 
-// Sidebar — навигация, список диалогов и состояние платформы.
 export function Sidebar({
   view,
   onView,

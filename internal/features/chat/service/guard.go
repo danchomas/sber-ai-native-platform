@@ -9,13 +9,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/promptguard"
 )
 
-// Детерминированный слой защиты вокруг модели. Главная гарантия — у модели
-// есть только инструменты чтения, — от него не зависит; этот слой делает
-// поведение предсказуемым там, где малая модель могла бы растеряться:
-// явная атака на инструкции и просьба изменить данные отклоняются до
-// обращения к модели, а ответ проверяется на утечку промпта и чистится
-// от ссылок и разметки.
-
 var kindNames = map[promptguard.Kind]string{
 	promptguard.KindOverride:    "попытка отменить правила ассистента",
 	promptguard.KindPromptLeak:  "запрос служебных инструкций",
@@ -24,8 +17,6 @@ var kindNames = map[promptguard.Kind]string{
 	promptguard.KindDestructive: "просьба изменить данные",
 }
 
-// screen отвечает без модели на вопросы, которые платформа выполнять
-// не должна. nil — вопрос можно передавать агенту.
 func (s *Service) screen(ctx context.Context, question string) *domain.Answer {
 	if findings := promptguard.Inspect(question); len(findings) > 0 {
 		f := findings[0]
@@ -63,11 +54,7 @@ var defaultQuestions = []string{
 	"Есть ли в данных дубликаты?",
 }
 
-// secure проверяет ответ перед показом: утечка системного промпта
-// заменяет ответ отказом, ссылки и разметка вырезаются.
 func (s *Service) secure(ctx context.Context, a *domain.Answer, canary promptguard.Canary) {
-	// Ответ, который дал сам слой защиты, написан платформой, а не моделью:
-	// его фразы о правилах совпадают с промптом, но утечкой не являются.
 	if a.Blocked {
 		return
 	}
@@ -95,13 +82,10 @@ func (s *Service) secure(ctx context.Context, a *domain.Answer, canary promptgua
 	changed := cleaned != strings.TrimSpace(a.Text)
 	a.Text = cleaned
 
-	// Новый срез, а не a.Followups[:0]: продолжения могут ссылаться на общий
-	// defaultQuestions, и фильтр на месте испортил бы его для всех вопросов.
 	followups := make([]string, 0, len(a.Followups))
 	for _, f := range a.Followups {
 		f = promptguard.CleanOutput(promptguard.Neutralize(f, 120))
-		// Продолжение — это кнопка, которая отправит вопрос от имени
-		// пользователя. Похожее на инъекцию продолжение не показываем.
+
 		if f == "" || promptguard.IsInjection(f) {
 			changed = true
 			continue

@@ -121,7 +121,6 @@ func TestValidateCollectsTables(t *testing.T) {
 }
 
 func TestSourcePolicyIsolatesSchemas(t *testing.T) {
-
 	p := NewSourcePolicy("sales", []TableName{
 		{Schema: "sales", Table: "orders"},
 		{Schema: "crm", Table: "clients"},

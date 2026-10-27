@@ -132,10 +132,6 @@ func (h *Handler) Ask(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, r, http.StatusOK, askResponse{SessionID: id, Answer: answer})
 }
 
-// AskStream отвечает на вопрос потоком событий (text/event-stream):
-// «step» — очередной шаг агента, «answer» — готовый ответ, «error» — сбой.
-// Пользователь видит ход работы, пока модель думает, вместо пустого
-// ожидания длиной в минуту.
 func (h *Handler) AskStream(w http.ResponseWriter, r *http.Request) {
 	id, err := request.UUID(r, "id")
 	if err != nil {
@@ -159,7 +155,7 @@ func (h *Handler) AskStream(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	// nginx иначе буферизует поток и отдаст его одним куском в конце.
+
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()

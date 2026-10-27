@@ -1,8 +1,3 @@
-// Снимает интерфейс на нескольких ширинах и сообщает о горизонтальной
-// прокрутке. Нужен, чтобы вёрстку проверяли глазами, а не на веру.
-//
-//   node tools/screenshot.mjs [url] [каталог]
-
 import { chromium } from "playwright";
 
 const url = process.argv[2] || "http://localhost:3000/";

@@ -1,5 +1,3 @@
-// Поток событий ответа агента: шаги, затем ответ; ошибка — исключение.
-
 import { describe, expect, it, vi } from "vitest";
 
 import { HttpClient, parseEvent } from "../src/shared/api/HttpClient.js";

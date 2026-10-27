@@ -49,7 +49,6 @@ func testCatalog() Catalog {
 	}
 }
 
-// mustPassGuard проверяет инвариант: всё, что собрал компилятор, проходит sqlguard.
 func mustPassGuard(t *testing.T, c *Compiled, cat Catalog) {
 	t.Helper()
 	tables := make([]string, 0, len(cat.Datasets))

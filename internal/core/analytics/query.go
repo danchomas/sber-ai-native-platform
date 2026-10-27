@@ -1,11 +1,3 @@
-// Package analytics переводит типизированный аналитический запрос в SQL.
-//
-// Это главная граница безопасности агента: модель не пишет SQL, а заполняет
-// поля Query. Каждое поле сверяется с белым списком — датасеты и колонки
-// только из каталога, функции и операторы только из перечислений ниже, —
-// а значения фильтров уходят в базу параметрами, а не текстом запроса.
-// Вредный запрос в таком языке невыразим. Готовый SQL всё равно проходит
-// sqlguard: второй слой защиты не полагается на корректность первого.
 package analytics
 
 import (
@@ -16,7 +8,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/apperr"
 )
 
-// Query — запрос в терминах каталога: что посчитать, в каком разрезе, по каким строкам.
 type Query struct {
 	Dataset string     `json:"dataset"`
 	Join    []string   `json:"join,omitempty"`
@@ -104,8 +95,6 @@ const (
 
 var Ops = []Op{OpEq, OpNe, OpGt, OpGte, OpLt, OpLte, OpIn, OpNotIn, OpBetween, OpContains, OpIsNull, OpNotNull}
 
-// Пределы держат запрос в размерах, которые база посчитает быстро,
-// а человек прочитает на одном графике.
 const (
 	MaxMetrics     = 6
 	MaxGroupBy     = 3
@@ -121,8 +110,6 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", apperr.ErrValidation, fmt.Sprintf(format, args...))
 }
 
-// label обрезает подпись до предела идентификатора PostgreSQL по границе
-// символа: иначе база сама обрежет её посреди кириллической буквы.
 func label(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if len(s) <= maxLabelBytes {

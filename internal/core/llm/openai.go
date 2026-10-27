@@ -18,12 +18,8 @@ import (
 
 const maxListedInError = 8
 
-// ErrToolsUnsupported — сервер или модель не умеют function calling.
-// Агент в этом случае переходит на разбор ответа в JSON-режиме.
 var ErrToolsUnsupported = errors.New("модель не поддерживает вызов инструментов")
 
-// ErrToolChoiceUnsupported — сервер не принимает tool_choice: "required".
-// Инструменты при этом работают, просто без обязательного вызова.
 var ErrToolChoiceUnsupported = errors.New("сервер не поддерживает обязательный вызов инструмента")
 
 type Client struct {
@@ -132,8 +128,6 @@ func (c *Client) Complete(ctx context.Context, req domain.Completion) (string, e
 	return reply.Content, nil
 }
 
-// Converse — один ход разговора с инструментами по протоколу function calling
-// OpenAI. Его понимают Ollama, vLLM, llama.cpp (с --jinja) и OpenRouter.
 func (c *Client) Converse(ctx context.Context, req domain.Completion) (domain.Reply, error) {
 	body, err := json.Marshal(c.buildRequest(req))
 	if err != nil {
@@ -173,7 +167,7 @@ func (c *Client) buildRequest(req domain.Completion) chatRequest {
 		for _, call := range m.ToolCalls {
 			tc := toolCallJSON{ID: call.ID, Type: "function"}
 			tc.Function.Name = call.Name
-			// В протоколе OpenAI аргументы — JSON, упакованный в строку.
+
 			encoded, _ := json.Marshal(string(argumentsOrEmpty(call.Arguments)))
 			tc.Function.Arguments = encoded
 			msg.ToolCalls = append(msg.ToolCalls, tc)
@@ -272,8 +266,6 @@ func (c *Client) do(ctx context.Context, body []byte) (reply domain.Reply, retry
 	return reply, false, nil
 }
 
-// decodeArguments принимает оба варианта, встречающиеся у серверов:
-// аргументы строкой с JSON внутри (OpenAI, vLLM) и сразу объектом.
 func decodeArguments(raw json.RawMessage) json.RawMessage {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) > 0 && trimmed[0] == '"' {

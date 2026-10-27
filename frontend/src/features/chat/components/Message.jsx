@@ -48,8 +48,6 @@ export function UserMessage({ text }) {
   );
 }
 
-// PendingMessage — ответ, который ещё готовится: шаги агента приходят
-// потоком, и пользователь видит, что именно сейчас происходит.
 export function PendingMessage({ steps = [] }) {
   return (
     <div className="msg">
@@ -79,15 +77,11 @@ export function PendingMessage({ steps = [] }) {
   );
 }
 
-// AssistantMessage показывает ответ агента целиком: текст, предупреждения,
-// визуализацию, ссылку на дашборд, продолжения и SQL под катом.
 export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDashboard }) {
   const hasResult = answer?.result?.columns?.length > 0;
   const options = answer?.chart_options || [];
   const [chart, setChart] = useState(answer?.chart);
   const [pinning, setPinning] = useState(false);
-  // На дашборд закрепляются только параметры запроса: виджет пересчитается
-  // при открытии. Прогноз и другие расчёты поверх данных не пересчитать.
   const canPin = hasResult && !answer.analysis && answer.query && answer.intent === "query";
   const meta = [];
   if (answer) {
@@ -196,9 +190,6 @@ export function AssistantMessage({ answer, fallbackText, theme, onAsk, onOpenDas
   );
 }
 
-// AgentSteps показывает, как агент шёл к ответу: какие инструменты вызвал,
-// где ошибся и исправился. Это и объяснение ответа, и аргумент доверия:
-// видно, что модель работала только через инструменты платформы.
 function AgentSteps({ steps }) {
   const failed = steps.filter((s) => !s.ok).length;
   return (

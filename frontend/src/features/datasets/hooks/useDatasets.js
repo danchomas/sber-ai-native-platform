@@ -2,8 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
 
-// useDatasets ведёт каталог: и загруженные файлы, и подключённые таблицы
-// внешних источников — для интерфейса это один список.
 export function useDatasets() {
   const [items, setItems] = useState([]);
   const [relations, setRelations] = useState([]);

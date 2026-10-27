@@ -119,7 +119,6 @@ func (r *DashboardRepository) List(ctx context.Context, limit int) ([]domain.Das
 	return out, nil
 }
 
-// AddWidget дописывает виджет в конец панели.
 func (r *DashboardRepository) AddWidget(ctx context.Context, dashboardID uuid.UUID, w *domain.Widget) error {
 	return corepg.WithTx(ctx, r.pool, func(tx pgx.Tx) error {
 		var position int

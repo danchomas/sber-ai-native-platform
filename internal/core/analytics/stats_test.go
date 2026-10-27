@@ -60,7 +60,6 @@ func TestPearson(t *testing.T) {
 }
 
 func TestLagCorrelationsFindsLeadingSeries(t *testing.T) {
-	// y повторяет x с опозданием на два месяца.
 	x := monthly(1, 5, 2, 8, 3, 9, 4, 7, 2, 6, 1, 5)
 	yv := []float64{0, 0}
 	for _, p := range x[:len(x)-2] {
@@ -81,7 +80,6 @@ func TestLagCorrelationsFindsLeadingSeries(t *testing.T) {
 }
 
 func TestSeasonalIndices(t *testing.T) {
-	// Июль вдвое выше остальных месяцев два года подряд.
 	var vs []float64
 	for range 2 {
 		for m := 1; m <= 12; m++ {
@@ -175,7 +173,6 @@ func TestForecastRejectsShortSeries(t *testing.T) {
 func ExampleForecast() {
 	_, summary, _ := Forecast(monthly(10, 20, 30, 40), GrainQuarter, 2)
 	fmt.Printf("%s, рост %.0f%%\n", summary.Method, summary.Growth*100)
-	// Output: линейный тренд, рост 50%
 }
 
 func TestFit(t *testing.T) {

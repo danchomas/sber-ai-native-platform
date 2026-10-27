@@ -2,11 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
 
-// useDashboards ведёт список панелей и открытую панель.
-//
-// Панель хранит параметры запросов, а не выгрузку, поэтому при открытии
-// запросы выполняются заново — цифры всегда свежие. Фильтр периода
-// живёт здесь же: при смене панели он сбрасывается.
 export function useDashboards({ openId, onCount } = {}) {
   const [items, setItems] = useState([]);
   const [current, setCurrent] = useState(null);

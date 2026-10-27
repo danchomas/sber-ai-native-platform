@@ -1,22 +1,9 @@
 #!/usr/bin/env bash
-# Загружает тестовые наборы данных в платформу через её же API.
-#
-#   scripts/load-datasets.sh                  все файлы из ./datasets
-#   scripts/load-datasets.sh 01 09            только указанные (по префиксу)
-#   DATASETS_DIR=/path scripts/load-datasets.sh
-#
-# Сами файлы в репозиторий не входят: 1.4 ГБ, предел GitHub — 100 МБ
-# на файл. Положите их в ./datasets и запустите этот скрипт.
-#
-# Загрузка идёт через обычный публичный эндпоинт: разделитель, кодировка
-# и типы колонок определяются платформой, никаких особых путей для
-# «своих» данных нет.
 
 set -euo pipefail
 
 DIR="${DATASETS_DIR:-./datasets}"
 API="${API_URL:-http://localhost:3000/api/v1}"
-# Файл на 200 МБ с миллионом строк грузится и профилируется минуты.
 TIMEOUT="${UPLOAD_TIMEOUT:-1800}"
 
 if [ ! -d "$DIR" ]; then
@@ -29,8 +16,6 @@ if ! curl -sf --max-time 10 "$API/health" >/dev/null; then
     exit 1
 fi
 
-# Имя датасета читается человеком и попадает в контекст агента,
-# поэтому убираем порядковый префикс и подчёркивания.
 pretty_name() {
     basename "$1" .csv | sed -E 's/^[0-9]+_//; s/_/ /g'
 }

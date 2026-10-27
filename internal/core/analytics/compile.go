@@ -9,8 +9,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Catalog — то, что компилятору разрешено знать о данных: готовые датасеты
-// и выведенные связи. Ничего за его пределами в SQL не попадёт.
 type Catalog struct {
 	Datasets      []domain.Dataset
 	Relations     []domain.Relation
@@ -43,7 +41,6 @@ type compiler struct {
 	warns  []string
 }
 
-// Compile собирает агрегирующий запрос: разрезы, метрики, фильтры, сортировка.
 func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 	c := &compiler{cat: cat}
 	if err := c.bind(q.Dataset, q.Join); err != nil {
@@ -132,7 +129,6 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 	return c.result(sb.String()), nil
 }
 
-// RowsQuery — выборка отдельных записей: посмотреть, как данные выглядят.
 type RowsQuery struct {
 	Dataset string   `json:"dataset"`
 	Columns []string `json:"columns,omitempty"`
@@ -202,8 +198,6 @@ func CompileRows(q RowsQuery, cat Catalog) (*Compiled, error) {
 	return c.result(sb.String()), nil
 }
 
-// CompileDuplicates строит два запроса: сводку по повторяющимся строкам
-// и примеры самых частых повторов. Без колонок сравниваются строки целиком.
 func CompileDuplicates(dataset string, columns []string, cat Catalog) (summary, examples *Compiled, err error) {
 	c := &compiler{cat: cat}
 	if err := c.bind(dataset, nil); err != nil {
@@ -297,8 +291,6 @@ func (c *compiler) bind(dataset string, joins []string) error {
 	return nil
 }
 
-// relation ищет связь нового датасета с любым из уже привязанных и
-// возвращает условие соединения.
 func (c *compiler) relation(ds domain.Dataset) (string, boundTable, bool) {
 	for _, bt := range c.tables {
 		for _, r := range c.cat.Relations {
@@ -342,9 +334,6 @@ func (c *compiler) dataset(name string) (domain.Dataset, error) {
 	return domain.Dataset{}, invalid("датасета %q нет в каталоге", name)
 }
 
-// column разрешает ссылку на колонку: «колонка» ищется в основном датасете,
-// затем в присоединённых; «датасет.колонка» — явно. Подходит и техническое
-// имя, и исходное название из файла.
 func (c *compiler) column(ref string) (boundTable, domain.Column, error) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
@@ -612,8 +601,6 @@ func writeWhere(sb *strings.Builder, conds []string) {
 	sb.WriteString(strings.Join(conds, " AND "))
 }
 
-// orderBy выбирает сортировку по номеру колонки результата: так она не
-// зависит от выражения и не даёт модели вставить в ORDER BY ничего своего.
 func orderBy(s *Sort, outs []output, hasTime bool) (string, error) {
 	if s == nil || strings.TrimSpace(s.By) == "" {
 		switch {

@@ -1,5 +1,3 @@
-// Сообщение об ошибке показывается как есть: текст приходит из платформы
-// и написан для бизнес-пользователя.
 export function ErrorBanner({ error, onRetry }) {
   if (!error) return null;
   return (

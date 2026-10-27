@@ -23,9 +23,6 @@ type Handler struct {
 	allowSQL bool
 }
 
-// New создаёт обработчик свободного SQL. allowSQL — AGENT_ALLOW_RAW_SQL:
-// свободный SQL, от модели или от клиента, принимается только вместе.
-// По умолчанию запросы строятся только из параметров через компилятор.
 func New(catalog Catalog, exec Executor, cfg config.Query, allowSQL bool) *Handler {
 	return &Handler{catalog: catalog, exec: exec, cfg: cfg, allowSQL: allowSQL}
 }

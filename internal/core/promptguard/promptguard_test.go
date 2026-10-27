@@ -39,8 +39,6 @@ func TestInspect(t *testing.T) {
 	}
 }
 
-// Обычные вопросы о данных не должны выглядеть как инъекция: ложное
-// срабатывание ломает работу пользователя.
 func TestInspectIgnoresOrdinaryQuestions(t *testing.T) {
 	questions := []string{
 		"Что передо мной?",

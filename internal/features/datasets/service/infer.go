@@ -130,7 +130,6 @@ func InferType(samples []string) ValueParser {
 	}
 
 	if !anyMatch(values, hasLeadingZero) {
-
 		if decimalComma := decimalCommaStyle(values); decimalComma {
 			if allMatch(values, func(s string) bool { return isFloat(s, true) }) {
 				return ValueParser{Type: domain.ColumnTypeNumeric, DecimalComma: true}

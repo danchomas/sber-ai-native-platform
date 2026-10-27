@@ -4,8 +4,6 @@ import { fmtNum } from "../../../shared/lib/format.js";
 
 const ACCEPT = ".csv,.tsv,.txt";
 
-// Dropzone принимает файл перетаскиванием или через выбор.
-// Разделитель, кодировка и типы определяются платформой при загрузке.
 export function Dropzone({ onUpload }) {
   const input = useRef(null);
   const [over, setOver] = useState(false);

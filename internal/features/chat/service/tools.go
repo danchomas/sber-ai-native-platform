@@ -10,9 +10,6 @@ import (
 	"github.com/heinousness/aibi/internal/core/domain"
 )
 
-// Инструменты агента. Это весь его доступ к данным: прямого соединения
-// с базой у модели нет, SQL она не пишет (кроме run_sql, который выключен
-// по умолчанию). Каждый вызов проверяется компилятором analytics и sqlguard.
 const (
 	toolDescribe   = "describe_dataset"
 	toolAggregate  = "aggregate"
@@ -93,10 +90,6 @@ func widgetsSchema() schema {
 	}, "result_id"), "виджеты")
 }
 
-// toolAccess — какие изменяющие инструменты доступны модели в этом
-// вопросе. Права выдаются по вопросу пользователя, а не по решению модели:
-// инструкция, спрятанная в данных, не может «попросить» удалить виджет,
-// потому что в этом вопросе такого инструмента у модели просто нет.
 type toolAccess struct {
 	createDashboards bool
 	editDashboards   bool
@@ -119,7 +112,6 @@ func accessFor(question string) toolAccess {
 	}
 }
 
-// mutating сообщает, что инструмент меняет сохранённое состояние платформы.
 func mutating(name string) bool {
 	switch name {
 	case toolDashboard, toolAddWidgets, toolRemove:
@@ -140,8 +132,6 @@ func (a toolAccess) allows(name string) bool {
 	return true
 }
 
-// fullAccess — набор для описаний вне диалога (MCP отбирает из него
-// только инструменты чтения).
 var fullAccess = toolAccess{createDashboards: true, editDashboards: true, removeWidgets: true}
 
 func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
@@ -282,8 +272,6 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 	return out
 }
 
-// normalizeArgs прощает малым моделям типичные отступления от схемы:
-// строку вместо массива, метрику строкой, число строкой.
 func normalizeArgs(raw json.RawMessage, arrays ...string) json.RawMessage {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {

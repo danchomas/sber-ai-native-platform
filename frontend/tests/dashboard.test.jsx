@@ -1,5 +1,3 @@
-// Панель: главное число, полоса «Главное», фильтр периода.
-
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
