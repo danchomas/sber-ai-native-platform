@@ -58,6 +58,12 @@ func Error(w http.ResponseWriter, r *http.Request, err error) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
+// Classify — то же сопоставление ошибки с кодом и сообщением, что
+// в Error, для ответов, которые не укладываются в один JSON (поток событий).
+func Classify(err error) (status int, code, message string) {
+	return classify(err)
+}
+
 func classify(err error) (status int, code, message string) {
 	switch {
 	case errors.Is(err, apperr.ErrNotFound):

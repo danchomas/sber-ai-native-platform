@@ -4,11 +4,12 @@ import { api } from "../../../shared/api/PlatformApi.js";
 
 // useChat держит историю активного диалога и отправляет вопросы.
 //
-// Пока ответ готовится, в ленту кладётся заглушка: агент может думать
-// десятки секунд — он планирует SQL, выполняет его и переписывает при ошибке.
+// Пока ответ готовится, в ленту кладётся заглушка с ходом работы: агент
+// может думать десятки секунд, и шаги приходят потоком по мере выполнения.
 export function useChat(sessionId, { onAnswered } = {}) {
   const [messages, setMessages] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [steps, setSteps] = useState([]);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -29,11 +30,12 @@ export function useChat(sessionId, { onAnswered } = {}) {
       if (!question || busy || !sessionId) return;
 
       setError(null);
+      setSteps([]);
       setBusy(true);
       setMessages((prev) => [...prev, { id: `local-${Date.now()}`, role: "user", content: question }]);
 
       try {
-        const data = await api.ask(sessionId, question);
+        const data = await api.askStream(sessionId, question, (step) => setSteps((prev) => [...prev, step]));
         setMessages((prev) => [
           ...prev,
           { id: `answer-${Date.now()}`, role: "assistant", content: data.answer?.text, answer: data.answer },
@@ -48,5 +50,5 @@ export function useChat(sessionId, { onAnswered } = {}) {
     [busy, sessionId, onAnswered],
   );
 
-  return { messages, busy, error, ask };
+  return { messages, busy, steps, error, ask };
 }

@@ -87,6 +87,13 @@ export class PlatformApi {
     return this.http.post(`/sessions/${sessionId}/messages`, { question });
   }
 
+  // askStream — тот же вопрос, но шаги агента приходят по мере выполнения.
+  askStream(sessionId, question, onStep) {
+    return this.http.stream(`/sessions/${sessionId}/messages/stream`, { question }, (name, data) => {
+      if (name === "step") onStep?.(data);
+    });
+  }
+
   // ── Панели ────────────────────────────────────────────────────────
   listDashboards(limit = 50) {
     return this.http.get(`/dashboards?limit=${limit}`).then((r) => r?.dashboards ?? []);
