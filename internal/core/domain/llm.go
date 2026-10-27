@@ -16,6 +16,9 @@ type Completion struct {
 	Temperature float64
 	MaxTokens   int
 	JSONOnly    bool
+	// RequireTool просит модель обязательно вызвать инструмент
+	// (tool_choice: "required"), а не ответить текстом.
+	RequireTool bool
 }
 
 type ChatMessage struct {

@@ -217,8 +217,12 @@ func (m *memorySessions) LastTurns(_ context.Context, id uuid.UUID, _ int) ([]do
 	defer m.mu.Unlock()
 	var turns []domain.Turn
 	for _, msg := range m.messages[id] {
-		if msg.Role == domain.RoleUser {
+		switch {
+		case msg.Role == domain.RoleUser:
 			turns = append(turns, domain.Turn{Question: msg.Content})
+		case len(turns) > 0 && msg.Answer != nil:
+			last := &turns[len(turns)-1]
+			last.Answer, last.Blocked = msg.Content, msg.Answer.Blocked
 		}
 	}
 	return turns, nil

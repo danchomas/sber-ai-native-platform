@@ -18,6 +18,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
+	"github.com/heinousness/aibi/internal/core/promptguard"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
@@ -59,6 +60,11 @@ type Service struct {
 	// noTools помнит модели, которые отказали в function calling, чтобы
 	// не тратить на них лишний запрос перед каждым вопросом.
 	noTools sync.Map
+	// noToolChoice помнит модели, сервер которых не принимает
+	// tool_choice: "required".
+	noToolChoice sync.Map
+	// slots ограничивает число вопросов, которые агент ведёт одновременно.
+	slots chan struct{}
 }
 
 func New(
@@ -74,10 +80,45 @@ func New(
 	return &Service{
 		catalog: catalog, exec: exec, sessions: sessions,
 		dashboards: dashboards, models: models, cfg: cfg, agent: agent, log: log,
+		slots: make(chan struct{}, max(agent.MaxConcurrent, 1)),
+	}
+}
+
+// acquire занимает место в очереди агента. Свободного места вопрос ждёт
+// не дольше AGENT_QUEUE_WAIT, затем получает apperr.ErrBusy.
+func (s *Service) acquire(ctx context.Context) (func(), error) {
+	release := func() { <-s.slots }
+	select {
+	case s.slots <- struct{}{}:
+		return release, nil
+	default:
+	}
+
+	timer := time.NewTimer(s.agent.QueueWait)
+	defer timer.Stop()
+	select {
+	case s.slots <- struct{}{}:
+		return release, nil
+	case <-timer.C:
+		return nil, apperr.ErrBusy
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 }
 
 func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string) (*domain.Answer, error) {
+	return s.AskWithProgress(ctx, sessionID, question, nil)
+}
+
+// AskWithProgress — Ask с наблюдателем шагов агента: progress получает
+// каждый шаг по мере выполнения, чтобы интерфейс показывал ход работы,
+// пока ответ готовится. Вызывается в той же горутине; может быть nil.
+func (s *Service) AskWithProgress(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	question string,
+	progress func(domain.AgentStep),
+) (*domain.Answer, error) {
 	started := time.Now()
 
 	question = strings.TrimSpace(question)
@@ -91,6 +132,11 @@ func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string)
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	s.ensureTitle(ctx, session, question)
 
 	if err := s.sessions.AddMessage(ctx, &domain.Message{
@@ -99,7 +145,12 @@ func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string)
 		return nil, err
 	}
 
-	answer := s.answer(ctx, sessionID, question)
+	canary := promptguard.NewCanary()
+	answer := s.screen(ctx, question)
+	if answer == nil {
+		answer = s.answer(ctx, sessionID, question, canary, progress)
+	}
+	s.secure(ctx, answer, canary)
 	answer.Elapsed = time.Since(started).Milliseconds()
 
 	if err := s.sessions.AddMessage(ctx, &domain.Message{
@@ -115,10 +166,16 @@ func (s *Service) Ask(ctx context.Context, sessionID uuid.UUID, question string)
 	return answer, nil
 }
 
-func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question string) *domain.Answer {
+func (s *Service) answer(
+	ctx context.Context,
+	sessionID uuid.UUID,
+	question string,
+	canary promptguard.Canary,
+	progress func(domain.AgentStep),
+) *domain.Answer {
 	datasets, err := s.catalog.List(ctx)
 	if err != nil {
-		return failure("Не удалось прочитать каталог данных. Попробуйте повторить вопрос.", err)
+		return s.failure(ctx, "Не удалось прочитать каталог данных. Попробуйте повторить вопрос.", err)
 	}
 	if !hasReady(datasets) {
 		return &domain.Answer{
@@ -137,16 +194,38 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 		s.log.WarnContext(ctx, "история диалога недоступна", "error", err)
 	}
 
+	in := agentInput{
+		sessionID: sessionID, question: question,
+		datasets: datasets, relations: relations, turns: turns,
+		canary: canary, filter: &dataFilter{}, progress: progress,
+	}
+	answer := s.respond(ctx, in)
+	if note := in.filter.securityNote(); note != "" {
+		s.log.WarnContext(ctx, "из данных скрыты значения, похожие на инструкции", "count", in.filter.hidden)
+		answer.Security = append(answer.Security, note)
+	}
+	if len(answer.Followups) == 0 && (answer.Intent == domain.IntentQuery || answer.Intent == domain.IntentOverview) {
+		answer.Followups = suggestQuestions(datasets)
+	}
+	return answer
+}
+
+// respond выбирает путь ответа: агент с инструментами, план в JSON или,
+// без модели, описание данных по профилю каталога.
+func (s *Service) respond(ctx context.Context, in agentInput) *domain.Answer {
+	datasets, relations, question := in.datasets, in.relations, in.question
+
 	model := s.models.Current(ctx)
 	if caller, ok := model.(ToolCaller); ok {
 		if _, unsupported := s.noTools.Load(model.Model()); !unsupported {
-			answer, err := s.runAgent(ctx, caller, sessionID, question, datasets, relations, turns)
+			in.model = model.Model()
+			answer, err := s.runAgent(ctx, caller, in)
 			if err == nil {
 				return answer
 			}
 			if !errors.Is(err, llm.ErrToolsUnsupported) {
 				s.log.WarnContext(ctx, "цикл агента не запущен", "error", err)
-				answer := s.overviewAnswer(ctx, datasets, relations, question)
+				answer := s.overviewAnswer(ctx, in.filter, datasets, relations, question)
 				answer.Warnings = append(answer.Warnings,
 					"Языковая модель недоступна, поэтому показано описание данных по профилю каталога.")
 				return answer
@@ -157,12 +236,11 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 		}
 	}
 
-	schemaContext := s.planContext(datasets, relations)
-	plan, err := s.plan(ctx, schemaContext, turns, question)
+	schemaContext := s.planContext(in.filter, datasets, relations)
+	plan, err := s.plan(ctx, schemaContext, in, question)
 	if err != nil {
-
 		s.log.WarnContext(ctx, "планирование не выполнено", "error", err)
-		answer := s.overviewAnswer(ctx, datasets, relations, question)
+		answer := s.overviewAnswer(ctx, in.filter, datasets, relations, question)
 		answer.Warnings = append(answer.Warnings,
 			"Языковая модель недоступна, поэтому показано описание данных по профилю каталога.")
 		return answer
@@ -170,13 +248,21 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 
 	switch plan.intent() {
 	case domain.IntentOverview:
-		return s.overviewAnswer(ctx, datasets, relations, question)
+		return s.overviewAnswer(ctx, in.filter, datasets, relations, question)
 
 	case domain.IntentQuery:
-		return s.queryAnswer(ctx, schemaContext, datasets, relations, question, plan)
+		return s.queryAnswer(ctx, in.filter, schemaContext, datasets, relations, question, plan)
 
 	case domain.IntentDashboard:
-		return s.dashboardAnswer(ctx, sessionID, schemaContext, datasets, relations, question, plan)
+		if !accessFor(question).createDashboards {
+			// Дашборд меняет сохранённое состояние, поэтому собирается только
+			// по прямой просьбе пользователя, а не по решению модели.
+			return &domain.Answer{
+				Intent: domain.IntentClarify,
+				Text:   "Собрать по этому вопросу дашборд? Напишите, например: «собери дашборд с этими показателями».",
+			}
+		}
+		return s.dashboardAnswer(ctx, in.sessionID, schemaContext, datasets, relations, question, plan)
 
 	case domain.IntentReject:
 		text := plan.Message
@@ -203,12 +289,12 @@ func (s *Service) answer(ctx context.Context, sessionID uuid.UUID, question stri
 	}
 }
 
-func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain.Turn, question string) (*plan, error) {
-	messages := formatHistory(turns)
+func (s *Service) plan(ctx context.Context, schemaContext string, in agentInput, question string) (*plan, error) {
+	messages := formatHistory(in.filter, in.turns)
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: question})
 
 	raw, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
-		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL),
+		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL, in.canary),
 		Messages: messages,
 		JSONOnly: true,
 	})
@@ -227,7 +313,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 		Content: "Верни ответ строго одним JSON-объектом по описанному формату, без текста вокруг.",
 	})
 	raw, err = s.models.Current(ctx).Complete(ctx, domain.Completion{
-		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL),
+		System:   buildPlannerPrompt(schemaContext, s.agent.AllowRawSQL, in.canary),
 		Messages: messages,
 		JSONOnly: true,
 	})
@@ -239,6 +325,7 @@ func (s *Service) plan(ctx context.Context, schemaContext string, turns []domain
 
 func (s *Service) overviewAnswer(
 	ctx context.Context,
+	f *dataFilter,
 	datasets []domain.Dataset,
 	relations []domain.Relation,
 	question string,
@@ -259,7 +346,7 @@ func (s *Service) overviewAnswer(
 		}
 	}
 
-	facts := buildOverviewFacts(s.catalog.Schema(), datasets, relations)
+	facts := buildOverviewFacts(f, s.catalog.Schema(), datasets, relations)
 	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System: overviewSystemPrompt,
 		Messages: []domain.ChatMessage{{
@@ -277,6 +364,7 @@ func (s *Service) overviewAnswer(
 
 func (s *Service) queryAnswer(
 	ctx context.Context,
+	f *dataFilter,
 	schemaContext string,
 	datasets []domain.Dataset,
 	relations []domain.Relation,
@@ -285,7 +373,7 @@ func (s *Service) queryAnswer(
 ) *domain.Answer {
 	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
-		return failure("Не удалось подготовить проверку запроса. Повторите вопрос.", err)
+		return s.failure(ctx, "Не удалось подготовить проверку запроса. Повторите вопрос.", err)
 	}
 
 	execution, err := s.runQuery(ctx, schemaContext, question,
@@ -320,10 +408,11 @@ func (s *Service) queryAnswer(
 		Chart:        &spec,
 		Datasets:     datasetNames(datasets, execution.tables),
 		ChartOptions: chart.Options(spec, execution.result),
+		Headline:     chart.Headline(spec, execution.result),
 		Warnings:     execution.warnings,
 		Followups:    p.Followups,
 	}
-	answer.Text = s.narrate(ctx, question, title, execution.result, execution.warnings)
+	answer.Text = s.narrate(ctx, f, question, title, execution.result, execution.warnings)
 	return answer
 }
 
@@ -338,7 +427,7 @@ func (s *Service) dashboardAnswer(
 ) *domain.Answer {
 	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
-		return failure("Не удалось подготовить проверку запросов дашборда.", err)
+		return s.failure(ctx, "Не удалось подготовить проверку запросов дашборда.", err)
 	}
 	catalog := s.analyticsCatalog(datasets, relations)
 
@@ -391,7 +480,7 @@ func (s *Service) dashboardAnswer(
 	title := orDefault(p.Title, "Дашборд по запросу")
 	dashboard, err := s.dashboards.CreateFromWidgets(ctx, &sessionID, title, question, widgets)
 	if err != nil {
-		return failure("Дашборд построен, но не сохранён. Повторите запрос.", err)
+		return s.failure(ctx, "Дашборд построен, но не сохранён. Повторите запрос.", err)
 	}
 
 	answer := &domain.Answer{
@@ -447,11 +536,11 @@ func (c candidate) String() string {
 	return c.sql
 }
 
-func (s *Service) planContext(datasets []domain.Dataset, relations []domain.Relation) string {
+func (s *Service) planContext(f *dataFilter, datasets []domain.Dataset, relations []domain.Relation) string {
 	if s.agent.AllowRawSQL {
-		return buildSchemaContext(s.catalog.Schema(), datasets, relations)
+		return buildSchemaContext(f, s.catalog.Schema(), datasets, relations)
 	}
-	return buildToolContext(datasets, relations)
+	return buildToolContext(f, datasets, relations)
 }
 
 func (s *Service) analyticsCatalog(datasets []domain.Dataset, relations []domain.Relation) analytics.Catalog {
@@ -558,8 +647,14 @@ func (s *Service) repair(ctx context.Context, schemaContext, question string, ba
 	return candidate{sql: p.SQL, query: p.Query}, nil
 }
 
-func (s *Service) narrate(ctx context.Context, question, title string, rs *domain.ResultSet, warnings []string) string {
-	digest := formatResultForModel(rs, resultRowsForModel)
+func (s *Service) narrate(
+	ctx context.Context,
+	f *dataFilter,
+	question, title string,
+	rs *domain.ResultSet,
+	warnings []string,
+) string {
+	digest := formatResultForModel(f, rs, resultRowsForModel)
 
 	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
 		System: narratorSystemPrompt,
@@ -616,12 +711,12 @@ func humanReason(err error) string {
 	return msg
 }
 
-func failure(text string, err error) *domain.Answer {
-	return &domain.Answer{
-		Intent:   domain.IntentReject,
-		Text:     text,
-		Warnings: []string{humanReason(err)},
-	}
+// failure — ответ на внутренний сбой. Подробности уходят в лог, а не
+// пользователю: текст ошибки базы или модели ему ничего не скажет и
+// раскрывает устройство платформы.
+func (s *Service) failure(ctx context.Context, text string, err error) *domain.Answer {
+	s.log.ErrorContext(ctx, "сбой при подготовке ответа", "error", err)
+	return &domain.Answer{Intent: domain.IntentReject, Text: text}
 }
 
 func hasReady(datasets []domain.Dataset) bool {

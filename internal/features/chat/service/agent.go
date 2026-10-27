@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
+	"github.com/heinousness/aibi/internal/core/promptguard"
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
@@ -31,6 +33,14 @@ const (
 	maxWidgets        = 8
 	maxCellRunes      = 80
 	maxToolOutputRows = resultRowsForModel
+	// maxArgsBytes — предел аргументов одного вызова. Честному вызову
+	// хватает пары килобайт; больше — признак мусора или атаки.
+	maxArgsBytes = 16 << 10
+	// maxRepeats — сколько одинаковых вызовов терпит цикл, прежде чем
+	// остановиться: малые модели склонны зацикливаться.
+	maxRepeats = 3
+	// maxFailStreak — сколько ошибок подряд терпит цикл.
+	maxFailStreak = 4
 )
 
 type agentResult struct {
@@ -62,6 +72,13 @@ type agentRun struct {
 	catalog   analytics.Catalog
 	scopes    []domain.Scope
 	known     map[string]bool
+	filter    *dataFilter
+	progress  func(domain.AgentStep)
+
+	// seen — результаты уже выполненных вызовов по ключу «имя+аргументы».
+	seen       map[string]string
+	repeats    int
+	failStreak int
 
 	results   []*agentResult
 	steps     []domain.AgentStep
@@ -80,26 +97,38 @@ type agentRun struct {
 func (s *Service) runAgent(
 	ctx context.Context,
 	caller ToolCaller,
-	sessionID uuid.UUID,
-	question string,
-	datasets []domain.Dataset,
-	relations []domain.Relation,
-	turns []domain.Turn,
+	in agentInput,
 ) (*domain.Answer, error) {
 	scopes, err := s.catalog.Scopes(ctx)
 	if err != nil {
-		return failure("Не удалось подготовить проверку запросов. Повторите вопрос.", err), nil
+		return s.failure(ctx, "Не удалось подготовить проверку запросов. Повторите вопрос.", err), nil
 	}
 
-	tools := agentTools(s.agent.AllowRawSQL)
-	r := s.newRun(sessionID, question, datasets, relations, scopes, tools)
+	tools := agentTools(s.agent.AllowRawSQL, accessFor(in.question))
+	r := s.newRun(in.sessionID, in.question, in.datasets, in.relations, scopes, tools)
+	r.filter, r.progress = in.filter, in.progress
 
-	messages := formatHistory(turns)
-	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: question})
-	system := buildAgentPrompt(buildToolContext(datasets, relations), s.agent.AllowRawSQL)
+	messages := formatHistory(in.filter, in.turns)
+	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: in.question})
+	system := buildAgentPrompt(buildToolContext(in.filter, in.datasets, in.relations), s.agent.AllowRawSQL, in.canary)
 
+	// Обязательный вызов инструмента — на первом шаге и после напоминания:
+	// без него модели, особенно на длинной истории, «отвечают» текстом
+	// и придумывают числа. Если сервер параметр не понимает, модель
+	// запоминается и дальше спрашивается без него.
+	_, choiceOff := s.noToolChoice.Load(in.model)
+	nudged, force := false, !choiceOff
 	for step := 0; step < s.agent.MaxSteps; step++ {
-		reply, err := caller.Converse(ctx, domain.Completion{System: system, Messages: messages, Tools: tools})
+		req := domain.Completion{System: system, Messages: messages, Tools: tools, RequireTool: force}
+		force = false
+		reply, err := caller.Converse(ctx, req)
+		if err != nil && req.RequireTool && errors.Is(err, llm.ErrToolChoiceUnsupported) {
+			s.noToolChoice.Store(in.model, struct{}{})
+			choiceOff = true
+			s.log.InfoContext(ctx, "сервер не принимает tool_choice, агент спрашивает без него", "model", in.model)
+			req.RequireTool = false
+			reply, err = caller.Converse(ctx, req)
+		}
 		if err != nil {
 			if step == 0 {
 				return nil, err
@@ -114,6 +143,17 @@ func (s *Service) runAgent(
 			calls = llm.ToolCallsFromText(reply.Content, func(name string) bool { return r.known[name] })
 		}
 		if len(calls) == 0 {
+			// Ответ текстом, когда ничего не посчитано, — частая привычка
+			// моделей: они «отвечают» по описанию каталога и придумывают
+			// числа. Один раз просим опереться на инструменты.
+			if !nudged && len(r.results) == 0 && !r.described && step+1 < s.agent.MaxSteps {
+				nudged, force = true, !choiceOff
+				messages = append(messages,
+					domain.ChatMessage{Role: domain.RoleAssistant, Content: reply.Content},
+					domain.ChatMessage{Role: domain.RoleUser, Content: groundingNudge},
+				)
+				continue
+			}
 			return r.finish(strings.TrimSpace(reply.Content)), nil
 		}
 		if len(calls) > maxCallsPerStep {
@@ -132,11 +172,46 @@ func (s *Service) runAgent(
 				return r.finish(""), nil
 			}
 		}
+
+		switch {
+		case r.repeats >= maxRepeats:
+			s.log.InfoContext(ctx, "агент остановлен: модель повторяет одни и те же вызовы", "step", step)
+			r.warnings = append(r.warnings,
+				"Модель начала повторять одни и те же действия, поэтому показан последний полученный результат.")
+			return r.finish(""), nil
+		case r.failStreak >= maxFailStreak:
+			s.log.InfoContext(ctx, "агент остановлен: ошибки инструментов подряд", "step", step)
+			return r.finish(""), nil
+		case step == s.agent.MaxSteps-2:
+			// Последний шаг модель должна потратить на ответ, а не на новый расчёт.
+			messages = append(messages, domain.ChatMessage{
+				Role:    domain.RoleUser,
+				Content: "Остался один шаг. Заверши работу вызовом answer по уже полученным результатам или clarify, если их нет.",
+			})
+		}
 	}
 
 	r.warnings = append(r.warnings,
 		"Анализ не уложился в отведённое число шагов, поэтому показан последний полученный результат.")
 	return r.finish(""), nil
+}
+
+const groundingNudge = "Ответ не принят: факты и числа о данных можно брать только из результатов инструментов. " +
+	"Если вопрос о данных — вызови нужный инструмент (describe_dataset, aggregate и другие) и закончи вызовом answer. " +
+	"Если это приветствие или вопрос о самой платформе — вызови answer с тем же текстом."
+
+// agentInput — всё, что агенту нужно знать о вопросе.
+type agentInput struct {
+	sessionID uuid.UUID
+	question  string
+	datasets  []domain.Dataset
+	relations []domain.Relation
+	turns     []domain.Turn
+	canary    promptguard.Canary
+	filter    *dataFilter
+	progress  func(domain.AgentStep)
+	// model — имя модели, чтобы помнить её возможности между вопросами.
+	model string
 }
 
 func (s *Service) newRun(
@@ -152,6 +227,7 @@ func (s *Service) newRun(
 		datasets: datasets, relations: relations, scopes: scopes,
 		catalog: analytics.Catalog{Datasets: datasets, Relations: relations, DefaultSchema: s.catalog.Schema()},
 		known:   make(map[string]bool, len(tools)),
+		seen:    map[string]string{},
 	}
 	for _, t := range tools {
 		r.known[t.Name] = true
@@ -162,12 +238,24 @@ func (s *Service) newRun(
 func (r *agentRun) dispatch(ctx context.Context, call domain.ToolCall) string {
 	started := time.Now()
 	step := domain.AgentStep{Tool: call.Name, Title: stepTitle(call.Name)}
+	final := call.Name == toolAnswer || call.Name == toolClarify || call.Name == toolDecline
+
+	key := callKey(call)
+	if previous, ok := r.seen[key]; ok && !final {
+		r.repeats++
+		if mutating(call.Name) {
+			return encodeOutput(map[string]any{"error": "это действие уже выполнено, повторять его не нужно: заверши работу через answer"})
+		}
+		return `{"repeat":true,"note":"этот вызов уже выполнялся, его результат ниже: не повторяй его, используй результат или вызови answer","previous":` +
+			previous + `}`
+	}
 
 	output, rows, err := r.invoke(ctx, call)
 
 	step.Elapsed = time.Since(started).Milliseconds()
 	step.Rows = rows
 	if err != nil {
+		r.failStreak++
 		step.Detail = humanReason(err)
 		r.s.log.DebugContext(ctx, "инструмент вернул ошибку", "tool", call.Name, "error", err)
 		output = encodeOutput(map[string]any{
@@ -175,15 +263,50 @@ func (r *agentRun) dispatch(ctx context.Context, call domain.ToolCall) string {
 			"hint":  "исправь параметры и вызови инструмент снова или выбери другой инструмент",
 		})
 	} else {
+		r.failStreak = 0
 		step.OK = true
+		if !final {
+			r.seen[key] = output
+		}
 	}
-	if call.Name != toolAnswer && call.Name != toolClarify && call.Name != toolDecline {
+	if !final {
 		r.steps = append(r.steps, step)
+		if r.progress != nil {
+			r.progress(step)
+		}
 	}
 	return output
 }
 
+// callKey — ключ вызова для поиска повторов. Аргументы приводятся к
+// каноническому JSON, чтобы порядок полей и пробелы не делали повтор новым.
+func callKey(call domain.ToolCall) string {
+	var v any
+	if err := json.Unmarshal(call.Arguments, &v); err != nil {
+		return call.Name + " " + string(call.Arguments)
+	}
+	canonical, err := json.Marshal(v)
+	if err != nil {
+		return call.Name + " " + string(call.Arguments)
+	}
+	return call.Name + " " + string(canonical)
+}
+
 func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, int, error) {
+	// Инструмент, которого нет в наборе этого вопроса, не выполняется, даже
+	// если модель знает его имя: набор определяет платформа, а не модель.
+	if !r.known[call.Name] {
+		if call.Name == toolSQL {
+			return "", 0, errors.New("инструмент run_sql отключён: используй aggregate")
+		}
+		if mutating(call.Name) {
+			return "", 0, fmt.Errorf("инструмент %s недоступен: пользователь не просил менять дашборды в этом вопросе", call.Name)
+		}
+		return "", 0, fmt.Errorf("инструмента %q нет; доступны только перечисленные в описании", call.Name)
+	}
+	if len(call.Arguments) > maxArgsBytes {
+		return "", 0, fmt.Errorf("аргументы слишком большие: %d байт, предел %d", len(call.Arguments), maxArgsBytes)
+	}
 	switch call.Name {
 	case toolDescribe:
 		var args struct {
@@ -231,9 +354,6 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 		return r.duplicates(ctx, args.Dataset, args.Columns)
 
 	case toolSQL:
-		if !r.s.agent.AllowRawSQL {
-			return "", 0, errors.New("инструмент run_sql отключён: используй aggregate")
-		}
 		var args struct {
 			SQL   string `json:"sql"`
 			Title string `json:"title"`
@@ -247,6 +367,16 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 		return r.createDashboard(ctx, call.Arguments)
 	case toolSeasonality, toolCorrelate, toolForecast, toolAnomalies:
 		return r.insight(ctx, call)
+	case toolCompare:
+		if len(r.results) >= maxResultsPerRun {
+			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
+		}
+		return r.compareSegments(ctx, call.Arguments)
+	case toolWhatIf:
+		if len(r.results) >= maxResultsPerRun {
+			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
+		}
+		return r.whatIf(ctx, call.Arguments)
 	case toolDashboards:
 		return r.listDashboards(ctx)
 	case toolAddWidgets:
@@ -263,6 +393,9 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 		}
 		if err := decodeArgs(call.Arguments, &args); err != nil {
 			return "", 0, err
+		}
+		if id := strings.TrimSpace(args.ResultID); id != "" && len(r.results) > 0 && r.result(id) == nil {
+			return "", 0, fmt.Errorf("результата %q нет; доступны: %s", id, strings.Join(r.resultIDs(), ", "))
 		}
 		r.final = &agentFinal{
 			intent: domain.IntentQuery, text: args.Text, resultID: args.ResultID,
@@ -290,6 +423,14 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 	return "", 0, fmt.Errorf("инструмента %q нет; доступны только перечисленные в описании", call.Name)
 }
 
+func (r *agentRun) resultIDs() []string {
+	ids := make([]string, len(r.results))
+	for i, res := range r.results {
+		ids[i] = res.id
+	}
+	return ids
+}
+
 // run выполняет собранный запрос. Даже SQL, собранный компилятором,
 // проходит sqlguard: второй слой не доверяет первому.
 func (r *agentRun) run(ctx context.Context, c *analytics.Compiled, q *analytics.Query, title string) (string, int, error) {
@@ -315,7 +456,7 @@ func (r *agentRun) run(ctx context.Context, c *analytics.Compiled, q *analytics.
 		sql: c.SQL, result: rs, tables: checked.Tables, warnings: warnings,
 	}
 	r.results = append(r.results, res)
-	return encodeOutput(resultOutput(res)), len(rs.Rows), nil
+	return encodeOutput(r.resultOutput(res)), len(rs.Rows), nil
 }
 
 func (r *agentRun) duplicates(ctx context.Context, dataset string, columns []string) (string, int, error) {
@@ -340,7 +481,7 @@ func (r *agentRun) duplicates(ctx context.Context, dataset string, columns []str
 	if err := json.Unmarshal([]byte(out), &payload); err != nil {
 		return out, rows, nil
 	}
-	payload["summary"] = tableRows(totals)
+	payload["summary"] = r.tableRows(totals)
 	return encodeOutput(payload), rows, nil
 }
 
@@ -433,9 +574,13 @@ func (r *agentRun) listDashboards(ctx context.Context) (string, int, error) {
 	for _, d := range dashboards {
 		widgets := make([]map[string]any, 0, len(d.Widgets))
 		for _, w := range d.Widgets {
-			widgets = append(widgets, map[string]any{"widget_id": w.ID, "title": w.Title, "chart": w.Chart.Type})
+			widgets = append(widgets, map[string]any{
+				"widget_id": w.ID, "title": r.filter.clean(w.Title, maxNameRunes), "chart": w.Chart.Type,
+			})
 		}
-		out = append(out, map[string]any{"dashboard_id": d.ID, "title": d.Title, "widgets": widgets})
+		out = append(out, map[string]any{
+			"dashboard_id": d.ID, "title": r.filter.clean(d.Title, maxNameRunes), "widgets": widgets,
+		})
 	}
 	if len(out) == 0 {
 		return encodeOutput(map[string]any{"dashboards": out, "note": "дашбордов пока нет, создай новый через create_dashboard"}), 0, nil
@@ -570,6 +715,9 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		answer.Result = res.result
 		answer.Chart = &spec
 		answer.ChartOptions = chart.Options(spec, res.result)
+		if res.analysis == "" {
+			answer.Headline = chart.Headline(spec, res.result)
+		}
 		answer.Datasets = r.usedDatasets([]*agentResult{res})
 		answer.Warnings = append(answer.Warnings, res.warnings...)
 		answer.Analysis = res.analysis
@@ -591,12 +739,32 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		return answer
 	}
 
+	if f.text == "" && len(r.steps) > 0 {
+		// Модель работала, но до результата не дошла: честнее попросить
+		// уточнить вопрос, чем рассказывать о возможностях платформы.
+		answer.Intent = domain.IntentClarify
+		answer.Text = "Не получилось посчитать ответ по данным. Уточните, какой показатель нужен, " +
+			"за какой период и в каком разрезе, — или выберите один из вопросов ниже."
+		if len(answer.Followups) == 0 {
+			answer.Followups = suggestQuestions(r.datasets)
+		}
+		return answer
+	}
+
 	answer.Intent = domain.IntentSmalltalk
 	answer.Text = orDefault(f.text,
 		"Я отвечаю на вопросы по загруженным данным: описываю их состав, считаю показатели, "+
 			"строю графики и собираю дашборды. Спросите, например, «что есть в этих данных».")
+	if hasDigits.MatchString(f.text) {
+		// Числа без единого расчёта взяты не из данных.
+		answer.Warnings = append(answer.Warnings,
+			"Этот ответ дан без расчёта по данным, числа в нём не проверены. "+
+				"Уточните вопрос — например, назовите показатель и датасет, — чтобы получить расчёт.")
+	}
 	return answer
 }
+
+var hasDigits = regexp.MustCompile(`\d`)
 
 func (r *agentRun) usedDatasets(results []*agentResult) []string {
 	var tables []string
@@ -651,6 +819,10 @@ func stepTitle(tool string) string {
 		return "Добавил виджеты на дашборд"
 	case toolRemove:
 		return "Убрал виджет с дашборда"
+	case toolCompare:
+		return "Сравнил сегменты"
+	case toolWhatIf:
+		return "Оценил сценарий «что если»"
 	}
 	return "Неизвестный инструмент «" + tool + "»"
 }
@@ -665,12 +837,12 @@ func decodeArgs(raw json.RawMessage, dst any) error {
 	return nil
 }
 
-func resultOutput(res *agentResult) map[string]any {
+func (r *agentRun) resultOutput(res *agentResult) map[string]any {
 	out := map[string]any{
 		"result_id": res.id,
 		"row_count": res.result.RowCount,
 	}
-	for k, v := range tableRows(res.result) {
+	for k, v := range r.tableRows(res.result) {
 		out[k] = v
 	}
 	if res.result.Truncated {
@@ -685,13 +857,15 @@ func resultOutput(res *agentResult) map[string]any {
 	return out
 }
 
-func tableRows(rs *domain.ResultSet) map[string]any {
+// tableRows — результат в виде, удобном модели. Строки из данных проходят
+// фильтр: значение, похожее на инструкцию, модель не увидит.
+func (r *agentRun) tableRows(rs *domain.ResultSet) map[string]any {
 	if rs == nil {
 		return map[string]any{}
 	}
 	cols := make([]string, len(rs.Columns))
 	for i, c := range rs.Columns {
-		cols[i] = c.Name
+		cols[i] = r.filter.clean(c.Name, maxNameRunes)
 	}
 	rows := rs.Rows
 	if len(rows) > maxToolOutputRows {
@@ -701,7 +875,7 @@ func tableRows(rs *domain.ResultSet) map[string]any {
 	for i, row := range rows {
 		cells[i] = make([]any, len(row))
 		for j, v := range row {
-			cells[i][j] = compactCell(v)
+			cells[i][j] = r.cell(v)
 		}
 	}
 	out := map[string]any{"columns": cols, "rows": cells}
@@ -711,13 +885,10 @@ func tableRows(rs *domain.ResultSet) map[string]any {
 	return out
 }
 
-func compactCell(v any) any {
+func (r *agentRun) cell(v any) any {
 	switch x := v.(type) {
 	case string:
-		if r := []rune(x); len(r) > maxCellRunes {
-			return string(r[:maxCellRunes]) + "…"
-		}
-		return x
+		return r.filter.clean(x, maxCellRunes)
 	case time.Time:
 		if x.Hour() == 0 && x.Minute() == 0 && x.Second() == 0 {
 			return x.Format("2006-01-02")

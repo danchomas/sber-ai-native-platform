@@ -2,13 +2,56 @@ package service
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/promptguard"
 )
 
-const maxTopValuesInContext = 6
+const (
+	maxTopValuesInContext = 6
+	maxNameRunes          = 80
+	maxCommentRunes       = 200
+)
+
+// dataFilter пропускает к модели строки из пользовательских данных:
+// заголовки, значения, комментарии. Невидимые символы и служебные токены
+// вырезаются, а значения, похожие на инструкцию, скрываются и считаются,
+// чтобы сказать пользователю, что защита сработала. Нулевой указатель
+// чистит без подсчёта.
+type dataFilter struct {
+	hidden int
+}
+
+func (f *dataFilter) clean(s string, maxRunes int) string {
+	out, hidden := promptguard.Data(s, maxRunes)
+	if hidden && f != nil {
+		f.hidden++
+	}
+	return out
+}
+
+// securityNote — пояснение для пользователя, если что-то скрыто от модели.
+func (f *dataFilter) securityNote() string {
+	if f == nil || f.hidden == 0 {
+		return ""
+	}
+	return fmt.Sprintf("В данных встретился текст, похожий на инструкцию для ИИ (%d %s). Он скрыт от модели и на ответ не повлиял.",
+		f.hidden, pluralValues(f.hidden))
+}
+
+func pluralValues(n int) string {
+	switch {
+	case n%10 == 1 && n%100 != 11:
+		return "значение"
+	case n%10 >= 2 && n%10 <= 4 && (n%100 < 10 || n%100 >= 20):
+		return "значения"
+	default:
+		return "значений"
+	}
+}
 
 var roleNames = map[domain.SemanticRole]string{
 	domain.RoleIdentifier: "идентификатор",
@@ -19,7 +62,7 @@ var roleNames = map[domain.SemanticRole]string{
 	domain.RoleUnknown:    "тип не определён",
 }
 
-func buildSchemaContext(schema string, datasets []domain.Dataset, relations []domain.Relation) string {
+func buildSchemaContext(f *dataFilter, schema string, datasets []domain.Dataset, relations []domain.Relation) string {
 	var sb strings.Builder
 
 	sb.WriteString("Все таблицы доступны только для чтения.\n")
@@ -44,7 +87,7 @@ func buildSchemaContext(schema string, datasets []domain.Dataset, relations []do
 		if source == "" {
 			sb.WriteString("\nДАННЫЕ, ЗАГРУЖЕННЫЕ В ПЛАТФОРМУ:\n")
 		} else {
-			fmt.Fprintf(&sb, "\nИСТОЧНИК «%s» (подключённая база):\n", source)
+			fmt.Fprintf(&sb, "\nИСТОЧНИК «%s» (подключённая база):\n", f.clean(source, maxNameRunes))
 		}
 
 		for _, d := range grouped[source] {
@@ -53,10 +96,10 @@ func buildSchemaContext(schema string, datasets []domain.Dataset, relations []do
 				tableSchema = schema
 			}
 			fmt.Fprintf(&sb, "\nТАБЛИЦА %s.%s — датасет «%s», строк: %d, колонок: %d\n",
-				tableSchema, d.TableName, d.Name, d.RowCount, len(d.Columns))
+				tableSchema, d.TableName, f.clean(d.Name, maxNameRunes), d.RowCount, len(d.Columns))
 
 			for _, c := range d.Columns {
-				sb.WriteString(describeColumn(c))
+				sb.WriteString(describeColumn(f, c))
 			}
 		}
 	}
@@ -79,7 +122,7 @@ func buildSchemaContext(schema string, datasets []domain.Dataset, relations []do
 
 // buildToolContext — каталог для агента с инструментами: датасеты по именам,
 // без схем и таблиц, потому что SQL модель не пишет.
-func buildToolContext(datasets []domain.Dataset, relations []domain.Relation) string {
+func buildToolContext(f *dataFilter, datasets []domain.Dataset, relations []domain.Relation) string {
 	var sb strings.Builder
 	sources := map[string]struct{}{}
 	for _, d := range datasets {
@@ -87,13 +130,13 @@ func buildToolContext(datasets []domain.Dataset, relations []domain.Relation) st
 			continue
 		}
 		sources[d.SourceName] = struct{}{}
-		origin := "загружен из файла " + d.SourceFile
+		origin := "загружен из файла " + f.clean(d.SourceFile, maxNameRunes)
 		if d.Attached() {
-			origin = "подключённая база «" + d.SourceName + "»"
+			origin = "подключённая база «" + f.clean(d.SourceName, maxNameRunes) + "»"
 		}
-		fmt.Fprintf(&sb, "\nДАТАСЕТ «%s» — строк: %d, %s\n", d.Name, d.RowCount, origin)
+		fmt.Fprintf(&sb, "\nДАТАСЕТ «%s» — строк: %d, %s\n", f.clean(d.Name, maxNameRunes), d.RowCount, origin)
 		for _, c := range d.Columns {
-			sb.WriteString(describeColumn(c))
+			sb.WriteString(describeColumn(f, c))
 		}
 	}
 	if sb.Len() == 0 {
@@ -113,12 +156,15 @@ func buildToolContext(datasets []domain.Dataset, relations []domain.Relation) st
 	return sb.String()
 }
 
-func describeColumn(c domain.Column) string {
+func describeColumn(f *dataFilter, c domain.Column) string {
 	var sb strings.Builder
 
-	fmt.Fprintf(&sb, "  - %s %s [%s]", c.Name, c.Type, roleNames[c.Role])
+	fmt.Fprintf(&sb, "  - %s %s [%s]", f.clean(c.Name, maxNameRunes), c.Type, roleNames[c.Role])
 	if c.SourceName != "" && c.SourceName != c.Name {
-		fmt.Fprintf(&sb, " заголовок в файле: «%s»", c.SourceName)
+		fmt.Fprintf(&sb, " заголовок в файле: «%s»", f.clean(c.SourceName, maxNameRunes))
+	}
+	if c.Comment != "" {
+		fmt.Fprintf(&sb, " комментарий: «%s»", f.clean(c.Comment, maxCommentRunes))
 	}
 
 	p := c.Profile
@@ -144,31 +190,36 @@ func describeColumn(c domain.Column) string {
 			fmt.Fprintf(&sb, ", среднее %.2f", *p.Mean)
 		}
 	case c.Role == domain.RoleDimension && len(p.TopValues) > 0:
-		fmt.Fprintf(&sb, "; частые значения: %s", formatTopValues(p.TopValues))
+		fmt.Fprintf(&sb, "; частые значения: %s", formatTopValues(f, p.TopValues))
 	}
 
 	sb.WriteString("\n")
 	return sb.String()
 }
 
-func formatTopValues(values []domain.ValueFrequency) string {
+func formatTopValues(f *dataFilter, values []domain.ValueFrequency) string {
 	if len(values) > maxTopValuesInContext {
 		values = values[:maxTopValuesInContext]
 	}
 	parts := make([]string, 0, len(values))
 	for _, v := range values {
-		value := v.Value
-		if len([]rune(value)) > 40 {
-			value = string([]rune(value)[:40]) + "…"
-		}
-		parts = append(parts, fmt.Sprintf("«%s» (%.0f%%)", value, v.Share*100))
+		parts = append(parts, fmt.Sprintf("«%s» (%.0f%%)", f.clean(v.Value, 40), v.Share*100))
 	}
 	return strings.Join(parts, ", ")
 }
 
-func formatHistory(turns []domain.Turn) []domain.ChatMessage {
+// historyResultTurns — у скольких последних ответов модель видит строки
+// результата, historyResultRows — сколько строк. Этого хватает, чтобы
+// продолжить разговор о «втором пункте», и не раздувает контекст.
+const (
+	historyResultTurns = 2
+	historyResultRows  = 10
+)
+
+func formatHistory(f *dataFilter, turns []domain.Turn) []domain.ChatMessage {
+	turns = slices.DeleteFunc(slices.Clone(turns), func(t domain.Turn) bool { return t.Blocked })
 	out := make([]domain.ChatMessage, 0, len(turns)*2)
-	for _, t := range turns {
+	for i, t := range turns {
 		if t.Question != "" {
 			out = append(out, domain.ChatMessage{Role: domain.RoleUser, Content: t.Question})
 		}
@@ -186,11 +237,40 @@ func formatHistory(turns []domain.Turn) []domain.ChatMessage {
 		if t.Chart != nil && t.Chart.Type != "" {
 			fmt.Fprintf(&sb, "\n[визуализация: %s]", t.Chart.Type)
 		}
+		if i >= len(turns)-historyResultTurns {
+			sb.WriteString(historyRows(f, t.Result))
+		}
 		if sb.Len() > 0 {
 			out = append(out, domain.ChatMessage{Role: domain.RoleAssistant, Content: sb.String()})
 		}
 	}
 	return out
+}
+
+// historyRows — пронумерованные строки показанного результата.
+func historyRows(f *dataFilter, rs *domain.ResultSet) string {
+	if rs == nil || len(rs.Columns) == 0 || len(rs.Rows) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	header := make([]string, len(rs.Columns))
+	for i, c := range rs.Columns {
+		header[i] = f.clean(c.Name, maxNameRunes)
+	}
+	fmt.Fprintf(&sb, "\n[показанный результат: %s", strings.Join(header, " | "))
+	for i, row := range rs.Rows {
+		if i >= historyResultRows {
+			fmt.Fprintf(&sb, "; … ещё %d", len(rs.Rows)-historyResultRows)
+			break
+		}
+		cells := make([]string, len(row))
+		for j, v := range row {
+			cells[j] = f.clean(formatCell(v), 60)
+		}
+		fmt.Fprintf(&sb, "; %d) %s", i+1, strings.Join(cells, " | "))
+	}
+	sb.WriteString("]")
+	return sb.String()
 }
 
 func compactSQL(sql string) string {
@@ -201,7 +281,7 @@ func compactSQL(sql string) string {
 	return s
 }
 
-func formatResultForModel(rs *domain.ResultSet, maxRows int) string {
+func formatResultForModel(f *dataFilter, rs *domain.ResultSet, maxRows int) string {
 	if rs == nil || len(rs.Columns) == 0 {
 		return "Результат пуст."
 	}
@@ -209,7 +289,7 @@ func formatResultForModel(rs *domain.ResultSet, maxRows int) string {
 	var sb strings.Builder
 	header := make([]string, len(rs.Columns))
 	for i, c := range rs.Columns {
-		header[i] = c.Name
+		header[i] = f.clean(c.Name, maxNameRunes)
 	}
 	fmt.Fprintf(&sb, "Колонки: %s\nСтрок получено: %d", strings.Join(header, " | "), rs.RowCount)
 	if rs.Truncated {
@@ -224,7 +304,7 @@ func formatResultForModel(rs *domain.ResultSet, maxRows int) string {
 		}
 		cells := make([]string, len(row))
 		for j, v := range row {
-			cells[j] = formatCell(v)
+			cells[j] = f.clean(formatCell(v), 60)
 		}
 		sb.WriteString(strings.Join(cells, " | "))
 		sb.WriteString("\n")

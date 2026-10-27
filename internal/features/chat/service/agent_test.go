@@ -63,7 +63,12 @@ func TestAgentAnswersThroughTools(t *testing.T) {
 }
 
 func TestAgentSendsCatalogAndToolsToModel(t *testing.T) {
-	model := newToolLLM(domain.Reply{Content: "Здравствуйте! Спросите о данных."})
+	// На ответ текстом без расчёта модель один раз получает напоминание
+	// опереться на инструменты; приветствие она просто повторяет.
+	model := newToolLLM(
+		domain.Reply{Content: "Здравствуйте! Спросите о данных."},
+		domain.Reply{Content: "Здравствуйте! Спросите о данных."},
+	)
 	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{}, &fakeDashboards{})
 
 	answer, err := svc.Ask(context.Background(), sessionID, "Привет")
@@ -85,13 +90,21 @@ func TestAgentSendsCatalogAndToolsToModel(t *testing.T) {
 			t.Errorf("схема инструмента %s — невалидный JSON", tool.Name)
 		}
 	}
-	for _, want := range []string{toolDescribe, toolAggregate, toolRows, toolDuplicates, toolDashboard, toolAnswer, toolClarify, toolDecline} {
+	for _, want := range []string{toolDescribe, toolAggregate, toolRows, toolDuplicates, toolDashboards, toolAnswer, toolClarify, toolDecline} {
 		if !names[want] {
 			t.Errorf("модели не передан инструмент %s", want)
 		}
 	}
 	if names[toolSQL] {
 		t.Fatal("run_sql не должен быть доступен модели по умолчанию")
+	}
+	for _, denied := range []string{toolDashboard, toolAddWidgets, toolRemove} {
+		if names[denied] {
+			t.Errorf("на приветствие модель не должна получать изменяющий инструмент %s", denied)
+		}
+	}
+	if !strings.Contains(req.System, "Служебная метка: aibi-") {
+		t.Fatal("в системный промпт должна попасть метка-канарейка")
 	}
 }
 
@@ -284,7 +297,9 @@ func TestAgentParsesToolCallsFromText(t *testing.T) {
 func TestAgentStopsAfterMaxSteps(t *testing.T) {
 	var replies []domain.Reply
 	for i := range 10 {
-		replies = append(replies, calls(call(fmt.Sprint("c", i), toolAggregate, `{"dataset":"orders","group_by":["status"]}`)))
+		// Аргументы разные: одинаковые вызовы цикл остановил бы раньше как повтор.
+		replies = append(replies, calls(call(fmt.Sprint("c", i), toolAggregate,
+			fmt.Sprintf(`{"dataset":"orders","group_by":["status"],"limit":%d}`, i+1))))
 	}
 	model := newToolLLM(replies...)
 	exec := &fakeExecutor{result: sampleResult()}

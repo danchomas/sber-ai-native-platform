@@ -83,7 +83,7 @@ func insightTools() []struct {
 		{
 			toolForecast,
 			"Прогноз показателя на будущие периоды по истории: тренд и сезонность с интервалом. " +
-				"Для вопросов «какой рост ожидается в ближайшие кварталы». Сценарий «что если» оцени, умножив прогноз на изменение, и явно назови это допущением.",
+				"Для вопросов «какой рост ожидается в ближайшие кварталы». Для сценария «что если изменить X» есть what_if.",
 			seriesSchema(schema{"horizon": schema{"type": "integer", "description": "на сколько периодов вперёд, до 36"}}),
 		},
 		{
@@ -212,7 +212,7 @@ func (r *agentRun) seasonality(ctx context.Context, a seriesArgs) (string, int, 
 	res := r.register(orDefault(a.Title, "Сезонность"), sql, tables, out, warnings, analysisSeasonality,
 		&domain.ChartSpec{Type: domain.ChartTypeBar, X: label, Y: []string{"Отклонение от среднего, %"}})
 
-	payload := resultOutput(res)
+	payload := r.resultOutput(res)
 	payload["summary"] = map[string]any{
 		"peak":            seasonName(a.Time.Grain, peak.Position),
 		"peak_above_pct":  round2((peak.Index - 1) * 100),
@@ -270,7 +270,7 @@ func (r *agentRun) correlate(ctx context.Context, a seriesArgs, x, y analytics.M
 		[]string{"Корреляция показывает совместное изменение, но не доказывает причинно-следственную связь."},
 		analysisCorrelation, &domain.ChartSpec{Type: domain.ChartTypeBar, X: "Сдвиг, периодов", Y: []string{"Корреляция"}})
 
-	payload := resultOutput(res)
+	payload := r.resultOutput(res)
 	payload["summary"] = map[string]any{
 		"best_lag":    best.Lag,
 		"best_r":      round2(best.R),
@@ -316,7 +316,7 @@ func (r *agentRun) forecast(ctx context.Context, a seriesArgs, horizon int) (str
 	res := r.register(orDefault(a.Title, "Прогноз"), sql, tables, out, warnings, analysisForecast,
 		&domain.ChartSpec{Type: domain.ChartTypeLine, X: period, Y: []string{"Факт", "Прогноз", "Нижняя граница", "Верхняя граница"}})
 
-	payload := resultOutput(res)
+	payload := r.resultOutput(res)
 	payload["summary"] = map[string]any{
 		"method":             summary.Method,
 		"seasonal":           summary.Seasonal,
@@ -361,7 +361,7 @@ func (r *agentRun) anomalies(ctx context.Context, a seriesArgs) (string, int, er
 
 	res := r.register(orDefault(a.Title, "Выбросы"), sql, tables, out, nil, analysisAnomalies,
 		&domain.ChartSpec{Type: domain.ChartTypeTable})
-	payload := resultOutput(res)
+	payload := r.resultOutput(res)
 	payload["summary"] = map[string]any{
 		"periods_checked": len(points),
 		"anomalies":       len(found),

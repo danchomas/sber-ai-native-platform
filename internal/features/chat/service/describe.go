@@ -39,21 +39,23 @@ func (r *agentRun) describe(name string) (string, int, error) {
 }
 
 func (r *agentRun) describeDataset(d domain.Dataset) map[string]any {
-	origin := "загружен из файла " + d.SourceFile
+	// Всё, что пришло из файла или чужой базы, — недоверенный текст:
+	// заголовки, значения и комментарии проходят фильтр.
+	origin := "загружен из файла " + r.filter.clean(d.SourceFile, maxNameRunes)
 	if d.Attached() {
-		origin = "таблица подключённой базы «" + d.SourceName + "»"
+		origin = "таблица подключённой базы «" + r.filter.clean(d.SourceName, maxNameRunes) + "»"
 	}
 
 	cols := make([]map[string]any, 0, len(d.Columns))
 	for _, c := range d.Columns {
 		col := map[string]any{
-			"name":  c.Name,
-			"title": orDefault(c.SourceName, c.Name),
+			"name":  r.filter.clean(c.Name, maxNameRunes),
+			"title": r.filter.clean(orDefault(c.SourceName, c.Name), maxNameRunes),
 			"type":  string(c.Type),
 			"role":  roleNames[c.Role],
 		}
 		if c.Comment != "" {
-			col["comment"] = c.Comment
+			col["comment"] = r.filter.clean(c.Comment, maxCommentRunes)
 		}
 		if p := c.Profile; p != nil {
 			col["distinct"] = p.DistinctCount
@@ -64,10 +66,10 @@ func (r *agentRun) describeDataset(d domain.Dataset) map[string]any {
 				col["unique"] = true
 			}
 			if p.MinValue != nil {
-				col["min"] = *p.MinValue
+				col["min"] = r.filter.clean(*p.MinValue, maxCellRunes)
 			}
 			if p.MaxValue != nil {
-				col["max"] = *p.MaxValue
+				col["max"] = r.filter.clean(*p.MaxValue, maxCellRunes)
 			}
 			if p.Mean != nil {
 				col["mean"] = math.Round(*p.Mean*100) / 100
@@ -80,7 +82,7 @@ func (r *agentRun) describeDataset(d domain.Dataset) map[string]any {
 				values := make([]map[string]any, 0, len(top))
 				for _, v := range top {
 					values = append(values, map[string]any{
-						"value": compactCell(v.Value), "count": v.Count,
+						"value": r.filter.clean(v.Value, maxCellRunes), "count": v.Count,
 						"share_pct": math.Round(v.Share*1000) / 10,
 					})
 				}
@@ -95,25 +97,25 @@ func (r *agentRun) describeDataset(d domain.Dataset) map[string]any {
 		switch d.ID {
 		case rel.LeftDatasetID:
 			links = append(links, map[string]any{
-				"column": rel.LeftColumn, "dataset": rel.RightDataset, "other_column": rel.RightColumn,
+				"column": rel.LeftColumn, "dataset": r.filter.clean(rel.RightDataset, maxNameRunes), "other_column": rel.RightColumn,
 				"overlap_pct": math.Round(rel.Overlap * 100), "cardinality": rel.Cardinality,
 			})
 		case rel.RightDatasetID:
 			links = append(links, map[string]any{
-				"column": rel.RightColumn, "dataset": rel.LeftDataset, "other_column": rel.LeftColumn,
+				"column": rel.RightColumn, "dataset": r.filter.clean(rel.LeftDataset, maxNameRunes), "other_column": rel.LeftColumn,
 				"overlap_pct": math.Round(rel.Overlap * 100), "cardinality": rel.Cardinality,
 			})
 		}
 	}
 
 	out := map[string]any{
-		"dataset": d.Name,
+		"dataset": r.filter.clean(d.Name, maxNameRunes),
 		"origin":  origin,
 		"rows":    d.RowCount,
 		"columns": cols,
 	}
 	if d.Description != "" {
-		out["description"] = d.Description
+		out["description"] = r.filter.clean(d.Description, maxCommentRunes)
 	}
 	if len(links) > 0 {
 		out["relations"] = links

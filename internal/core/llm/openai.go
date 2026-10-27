@@ -22,6 +22,10 @@ const maxListedInError = 8
 // Агент в этом случае переходит на разбор ответа в JSON-режиме.
 var ErrToolsUnsupported = errors.New("модель не поддерживает вызов инструментов")
 
+// ErrToolChoiceUnsupported — сервер не принимает tool_choice: "required".
+// Инструменты при этом работают, просто без обязательного вызова.
+var ErrToolChoiceUnsupported = errors.New("сервер не поддерживает обязательный вызов инструмента")
+
 type Client struct {
 	http        *http.Client
 	baseURL     string
@@ -71,6 +75,7 @@ type chatRequest struct {
 	Stream         bool              `json:"stream"`
 	ResponseFormat *responseFormat   `json:"response_format,omitempty"`
 	Tools          []toolJSON        `json:"tools,omitempty"`
+	ToolChoice     string            `json:"tool_choice,omitempty"`
 }
 
 type responseFormat struct {
@@ -199,6 +204,9 @@ func (c *Client) buildRequest(req domain.Completion) chatRequest {
 			},
 		})
 	}
+	if req.RequireTool && len(req.Tools) > 0 {
+		payload.ToolChoice = "required"
+	}
 	if req.JSONOnly && len(req.Tools) == 0 {
 		payload.ResponseFormat = &responseFormat{Type: "json_object"}
 	}
@@ -226,6 +234,9 @@ func (c *Client) do(ctx context.Context, body []byte) (reply domain.Reply, retry
 	}
 	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 		return domain.Reply{}, true, fmt.Errorf("модель ответила %s: %s", resp.Status, snippet(raw))
+	}
+	if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(string(raw)), "tool_choice") {
+		return domain.Reply{}, false, fmt.Errorf("%w: %s", ErrToolChoiceUnsupported, snippet(raw))
 	}
 	if resp.StatusCode == http.StatusBadRequest && strings.Contains(strings.ToLower(string(raw)), "tool") {
 		return domain.Reply{}, false, fmt.Errorf("%w: %s", ErrToolsUnsupported, snippet(raw))

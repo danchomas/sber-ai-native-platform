@@ -187,6 +187,8 @@ func (r *SessionRepository) LastTurns(ctx context.Context, sessionID uuid.UUID, 
 				pending.SQL = m.Answer.SQL
 				pending.Query = m.Answer.Query
 				pending.Chart = m.Answer.Chart
+				pending.Result = m.Answer.Result
+				pending.Blocked = m.Answer.Blocked
 			}
 			turns = append(turns, *pending)
 			pending = nil
