@@ -228,7 +228,7 @@ func (s *Service) overviewAnswer(
 	}
 
 	facts := buildOverviewFacts(s.catalog.Schema(), datasets, relations)
-	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
+	text, err := s.completeRussian(ctx, domain.Completion{
 		System: overviewSystemPrompt,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
@@ -239,7 +239,7 @@ func (s *Service) overviewAnswer(
 		answer.Text = fallbackOverviewText(datasets, relations)
 		return answer
 	}
-	answer.Text = strings.TrimSpace(text)
+	answer.Text = humanizeTableNames(strings.TrimSpace(text), s.catalog.Schema(), datasets)
 	return answer
 }
 
@@ -451,7 +451,7 @@ func (s *Service) repair(ctx context.Context, schemaContext, question, badSQL st
 func (s *Service) narrate(ctx context.Context, question, title string, rs *domain.ResultSet, warnings []string) string {
 	digest := formatResultForModel(rs, resultRowsForModel)
 
-	text, err := s.models.Current(ctx).Complete(ctx, domain.Completion{
+	text, err := s.completeRussian(ctx, domain.Completion{
 		System: narratorSystemPrompt,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,

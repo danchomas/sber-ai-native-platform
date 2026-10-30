@@ -108,16 +108,23 @@ func describeColumn(c domain.Column) string {
 			fmt.Fprintf(&sb, ", среднее %.2f", *p.Mean)
 		}
 	case c.Role == domain.RoleDimension && len(p.TopValues) > 0:
-		fmt.Fprintf(&sb, "; частые значения: %s", formatTopValues(p.TopValues))
+		fmt.Fprintf(&sb, "; частые значения: %s", formatTopValues(p.TopValues, p.DistinctCount))
 	}
 
 	sb.WriteString("\n")
 	return sb.String()
 }
 
-func formatTopValues(values []domain.ValueFrequency) string {
+// formatTopValues показывает несколько частых значений. Если это не все
+// значения колонки, так и говорит: иначе модель считает список полным и
+// уверенно отвечает «категории „Электроника“ в данных нет».
+func formatTopValues(values []domain.ValueFrequency, distinct int64) string {
 	if len(values) > maxTopValuesInContext {
 		values = values[:maxTopValuesInContext]
+	}
+	more := ""
+	if distinct > int64(len(values)) {
+		more = fmt.Sprintf(" — список неполный, всего значений: %d", distinct)
 	}
 	parts := make([]string, 0, len(values))
 	for _, v := range values {
@@ -127,7 +134,7 @@ func formatTopValues(values []domain.ValueFrequency) string {
 		}
 		parts = append(parts, fmt.Sprintf("«%s» (%.0f%%)", value, v.Share*100))
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", ") + more
 }
 
 func formatHistory(turns []domain.Turn) []domain.ChatMessage {

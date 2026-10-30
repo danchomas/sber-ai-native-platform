@@ -309,3 +309,70 @@ func TestNarrationFallback(t *testing.T) {
 		t.Fatalf("детерминированное изложение не сработало: %q", answer.Text)
 	}
 }
+
+func TestNarrationRetriesOnForeignScript(t *testing.T) {
+	model := newScriptedLLM(`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`)
+	model.narrations = []string{
+		"Чаще всего статус paid.紧随其后 идёт new.",
+		"Чаще всего статус paid, следом идёт new.",
+	}
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Text != "Чаще всего статус paid, следом идёт new." {
+		t.Fatalf("текст с иероглифами не переспрошен: %q", answer.Text)
+	}
+	if n := model.callCount("narration"); n != 2 {
+		t.Fatalf("ожидался один повтор изложения, вызовов: %d", n)
+	}
+}
+
+func TestNarrationFallsBackWhenForeignScriptPersists(t *testing.T) {
+	model := newScriptedLLM(`{"intent":"query","sql":"SELECT status, count(*) AS \"Количество\" FROM raw.ds_orders GROUP BY status"}`)
+	model.narration = "Чаще всего статус paid.紧随其后 идёт new."
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if hasForeignScript(answer.Text) {
+		t.Fatalf("иероглифы дошли до пользователя: %q", answer.Text)
+	}
+}
+
+func TestHasForeignScript(t *testing.T) {
+	for text, want := range map[string]bool{
+		"Выручка выросла на 12% (41 237 покупок).": false,
+		"Товар «Подушка 50×70 см» — лидер.":        false,
+		"покупках.紧随其后 идут скидки":                true,
+		"한국어":  true,
+		"カタカナ": true,
+	} {
+		if got := hasForeignScript(text); got != want {
+			t.Errorf("hasForeignScript(%q) = %v, ожидалось %v", text, got, want)
+		}
+	}
+}
+
+func TestHumanizeTableNames(t *testing.T) {
+	ds := []domain.Dataset{{Name: "01_Продажи", Schema: "raw", TableName: "ds_c_01_prodazhi_5e1ce493"}}
+	got := humanizeTableNames("Перед вами таблица из датасета raw.ds_c_01_prodazhi_5e1ce493 на 500 000 строк.", "raw", ds)
+	want := "Перед вами таблица из датасета «01_Продажи» на 500 000 строк."
+	if got != want {
+		t.Fatalf("получено %q, ожидалось %q", got, want)
+	}
+}
+
+func TestContextMarksIncompleteTopValues(t *testing.T) {
+	values := []domain.ValueFrequency{{Value: "a", Share: 0.5}, {Value: "b", Share: 0.3}}
+	if got := formatTopValues(values, 8); !strings.Contains(got, "список неполный, всего значений: 8") {
+		t.Fatalf("неполный список не помечен: %q", got)
+	}
+	if got := formatTopValues(values, 2); strings.Contains(got, "неполный") {
+		t.Fatalf("полный список помечен неполным: %q", got)
+	}
+}

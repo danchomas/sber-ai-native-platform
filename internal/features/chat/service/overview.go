@@ -188,3 +188,23 @@ func formatInt(n int64) string {
 	}
 	return out
 }
+
+// humanizeTableNames заменяет в тексте для пользователя техническое имя
+// таблицы (raw.ds_c_01_prodazhi_5e1ce493) названием датасета: модель
+// видит его в фактах и иногда переносит в ответ вопреки инструкции.
+func humanizeTableNames(text, defaultSchema string, datasets []domain.Dataset) string {
+	for _, d := range datasets {
+		if d.TableName == "" {
+			continue
+		}
+		schema := d.Schema
+		if schema == "" {
+			schema = defaultSchema
+		}
+		name := "«" + d.Name + "»"
+		text = strings.ReplaceAll(text, "«"+schema+"."+d.TableName+"»", name)
+		text = strings.ReplaceAll(text, schema+"."+d.TableName, name)
+		text = strings.ReplaceAll(text, d.TableName, name)
+	}
+	return text
+}
