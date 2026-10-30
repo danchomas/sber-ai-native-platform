@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -70,11 +71,15 @@ func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
+	warnings := checked.Warnings
+	if result.Truncated {
+		warnings = append(warnings, fmt.Sprintf("Показаны первые %d строк результата.", len(result.Rows)))
+	}
 	response.JSON(w, r, http.StatusOK, queryResponse{
 		Result:   result,
 		Source:   scope.SourceName,
 		Tables:   checked.Tables,
-		Warnings: checked.Warnings,
+		Warnings: warnings,
 	})
 }
 

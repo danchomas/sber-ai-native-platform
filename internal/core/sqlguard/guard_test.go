@@ -86,8 +86,12 @@ func TestValidateAddsLimit(t *testing.T) {
 	if !res.Wrapped {
 		t.Fatal("ожидалась обёртка с LIMIT")
 	}
-	if !strings.Contains(res.SQL, "LIMIT 1000") {
+	// На строку больше предела: по ней исполнитель узнаёт об обрезании.
+	if !strings.Contains(res.SQL, "LIMIT 1001") {
 		t.Fatalf("LIMIT не добавлен: %s", res.SQL)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("обёртка не должна предупреждать сама: %v", res.Warnings)
 	}
 }
 
@@ -165,5 +169,60 @@ func TestValidateRejectsTooManyJoins(t *testing.T) {
 		`SELECT 1 FROM raw.ds_users a JOIN raw.ds_orders b ON true JOIN raw.ds_orders c ON true LIMIT 1`, p)
 	if err == nil {
 		t.Fatal("ожидалось отклонение по числу соединений")
+	}
+}
+
+func TestValidateAllowsFromInsideFunctions(t *testing.T) {
+	cases := map[string]string{
+		"extract":           `SELECT EXTRACT(MONTH FROM created_at) AS m, count(*) FROM raw.ds_orders GROUP BY 1`,
+		"extract в cte":     `WITH m AS (SELECT EXTRACT(YEAR FROM created_at) AS y FROM raw.ds_orders) SELECT y FROM m`,
+		"substring":         `SELECT SUBSTRING(status FROM 1 FOR 3) FROM raw.ds_orders`,
+		"trim":              `SELECT TRIM(BOTH ' ' FROM status) FROM raw.ds_orders`,
+		"is distinct from":  `SELECT count(*) FROM raw.ds_orders WHERE status IS DISTINCT FROM 'paid'`,
+		"is not distinct":   `SELECT count(*) FROM raw.ds_orders WHERE status IS NOT DISTINCT FROM 'paid'`,
+		"вложенный extract": `SELECT date_part('year', created_at), EXTRACT(DOW FROM date_trunc('day', created_at)) FROM raw.ds_orders`,
+	}
+	for name, sql := range cases {
+		t.Run(name, func(t *testing.T) {
+			res, err := Validate(sql, testPolicy())
+			if err != nil {
+				t.Fatalf("колонка внутри функции принята за таблицу: %v", err)
+			}
+			if len(res.Tables) != 1 || res.Tables[0] != "raw.ds_orders" {
+				t.Fatalf("таблицы: %v", res.Tables)
+			}
+		})
+	}
+}
+
+func TestValidateChecksSubqueryInsideExtract(t *testing.T) {
+	sql := `SELECT EXTRACT(MONTH FROM (SELECT max(created_at) FROM pg_catalog.pg_class)) FROM raw.ds_orders`
+	if _, err := Validate(sql, testPolicy()); !errors.Is(err, apperr.ErrUnsafeQuery) {
+		t.Fatalf("подзапрос внутри EXTRACT должен проверяться, получено: %v", err)
+	}
+}
+
+func TestValidateCastsRoundArguments(t *testing.T) {
+	cases := map[string]string{
+		`SELECT round(avg(amount), 2) FROM raw.ds_orders`:                    `round((avg(amount))::numeric, 2)`,
+		`SELECT ROUND(sum(a) * 100.0 / count(*), 1) AS p FROM raw.ds_orders`: `ROUND((sum(a) * 100.0 / count(*))::numeric, 1)`,
+		`SELECT round(round(x, 3), 1) FROM raw.ds_orders`:                    `round((round((x)::numeric, 3))::numeric, 1)`,
+	}
+	for sql, want := range cases {
+		res, err := Validate(sql, testPolicy())
+		if err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+		if !strings.Contains(res.SQL, want) {
+			t.Fatalf("round не приведён к numeric:\n%s\nожидалось: %s", res.SQL, want)
+		}
+	}
+
+	res, err := Validate(`SELECT round(avg(amount)) FROM raw.ds_orders`, testPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.SQL, "numeric") {
+		t.Fatalf("round с одним аргументом трогать не нужно: %s", res.SQL)
 	}
 }
