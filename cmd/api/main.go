@@ -122,6 +122,9 @@ func newModel(ctx context.Context, cfg *config.Config, log *slog.Logger) domain.
 	}
 
 	client := llm.New(cfg.LLM)
+	if llm.IsOpenRouter(cfg.LLM.BaseURL) {
+		client = llm.NewOpenRouter(cfg.LLM)
+	}
 	if err := client.Ping(ctx); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return client

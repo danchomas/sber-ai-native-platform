@@ -27,6 +27,7 @@ type Client struct {
 	maxTokens   int
 	temperature float64
 	retries     int
+	noReasoning bool
 }
 
 func New(c config.LLM) *Client {
@@ -43,6 +44,14 @@ func New(c config.LLM) *Client {
 
 func (c *Client) WithHeaders(h map[string]string) *Client {
 	c.headers = h
+	return c
+}
+
+// WithoutReasoning просит провайдера не рассуждать перед ответом. Гибридные
+// модели (Qwen3.5+) рассуждают по умолчанию и съедают на это весь лимит
+// max_tokens, так что JSON-плана в ответе не остаётся.
+func (c *Client) WithoutReasoning() *Client {
+	c.noReasoning = true
 	return c
 }
 
@@ -66,10 +75,15 @@ type chatRequest struct {
 	MaxTokens      int               `json:"max_tokens,omitempty"`
 	Stream         bool              `json:"stream"`
 	ResponseFormat *responseFormat   `json:"response_format,omitempty"`
+	Reasoning      *reasoning        `json:"reasoning,omitempty"`
 }
 
 type responseFormat struct {
 	Type string `json:"type"`
+}
+
+type reasoning struct {
+	Enabled bool `json:"enabled"`
 }
 
 type chatMessageJSON struct {
@@ -116,6 +130,9 @@ func (c *Client) Complete(ctx context.Context, req domain.Completion) (string, e
 	}
 	if req.JSONOnly {
 		payload.ResponseFormat = &responseFormat{Type: "json_object"}
+	}
+	if c.noReasoning {
+		payload.Reasoning = &reasoning{Enabled: false}
 	}
 
 	body, err := json.Marshal(payload)
