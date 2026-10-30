@@ -41,6 +41,16 @@ function fmtDateTime(iso) {
   return d.toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
+// fmtDate — день без времени: для периода данных время только мешает.
+// Время из загруженных файлов хранится как есть, в UTC, — переводить его
+// в пояс браузера нельзя: 23:54 30 сентября стало бы 1 октября.
+function fmtDate(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" });
+}
+
 function fmtBytes(n) {
   if (!n) return "—";
   const units = ["Б", "КБ", "МБ", "ГБ"];
@@ -54,4 +64,4 @@ function truncate(text, max) {
   return str.length > max ? str.slice(0, max - 1) + "…" : str;
 }
 
-export { isNum, toNum, fmtNum, fmtCompact, fmtCell, fmtDateTime, fmtBytes, truncate };
+export { isNum, toNum, fmtNum, fmtCompact, fmtCell, fmtDate, fmtDateTime, fmtBytes, truncate };

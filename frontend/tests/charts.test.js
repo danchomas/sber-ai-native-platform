@@ -35,6 +35,74 @@ describe("движок визуализаций", () => {
     expect(node.textContent).toContain("Выручка");
   });
 
+  it("в строке агрегатов показывает и даты периода, а не только числа", () => {
+    const rs = resultSet(
+      [
+        { name: "Начало периода", type: "date" },
+        { name: "Конец периода", type: "date" },
+        { name: "Всего строк", type: "bigint" },
+      ],
+      [["2024-10-01T01:43:40Z", "2026-09-30T23:54:36Z", 500000]],
+    );
+    // Модель перечислила в y только числа — даты всё равно должны быть.
+    const node = render({ type: "kpi", y: ["Всего строк"] }, rs, {});
+
+    expect(node.querySelectorAll(".kpi").length).toBe(3);
+    expect(node.textContent).toContain("Начало периода");
+    // Без сдвига в пояс браузера: конец периода — 30 сентября, не 1 октября.
+    expect(node.textContent).toContain("01.10.2024");
+    expect(node.textContent).toContain("30.09.2026");
+  });
+
+  it("одна категория — один цвет во всех графиках страницы", () => {
+    const root = document.documentElement.style;
+    ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666", "#777777", "#888888"]
+      .forEach((c, i) => root.setProperty(`--series-${i + 1}`, c));
+
+    const legendColor = (node, name) => {
+      const chip = [...node.querySelectorAll(".legend span")].find((el) => el.textContent === name);
+      return chip?.querySelector("i")?.getAttribute("style");
+    };
+
+    // Линия с разбивкой: округа в одном порядке.
+    const line = render(
+      { type: "line", x: "Квартал", y: ["Выручка"], series: "Округ" },
+      resultSet(
+        [{ name: "Квартал", type: "text" }, { name: "Округ", type: "text" }, { name: "Выручка", type: "bigint" }],
+        [["Q1", "Южный", 1], ["Q1", "Центральный", 5], ["Q2", "Южный", 2], ["Q2", "Центральный", 6]],
+      ),
+      { height: 240 },
+    );
+    // Кольцо: те же округа в обратном порядке.
+    const donut = render(
+      { type: "donut", x: "Округ", y: ["Выручка"] },
+      resultSet(
+        [{ name: "Округ", type: "text" }, { name: "Выручка", type: "bigint" }],
+        [["Центральный", 11], ["Южный", 3]],
+      ),
+      { height: 240 },
+    );
+
+    expect(legendColor(line, "Центральный")).toBeTruthy();
+    expect(legendColor(donut, "Центральный")).toBe(legendColor(line, "Центральный"));
+    expect(legendColor(donut, "Южный")).toBe(legendColor(line, "Южный"));
+    expect(legendColor(donut, "Южный")).not.toBe(legendColor(donut, "Центральный"));
+  });
+
+  it("подписи периодов на оси идут по времени, а не по алфавиту", () => {
+    // Так модель отсортировала их в SQL: ORDER BY текстовой подписи.
+    const rows = [["1 кв. 2025", 10], ["1 кв. 2026", 30], ["2 кв. 2025", 15], ["4 кв. 2024", 5]];
+    const node = render(
+      { type: "line", x: "Квартал", y: ["Выручка"] },
+      resultSet([{ name: "Квартал", type: "text" }, { name: "Выручка", type: "bigint" }], rows),
+      { height: 240 },
+    );
+    const axis = [...node.querySelectorAll("svg text")].map((t) => t.textContent);
+    const order = ["4 кв. 2024", "1 кв. 2025", "2 кв. 2025", "1 кв. 2026"].map((l) => axis.indexOf(l));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
   it("к любому графику прикладывает таблицу", () => {
     const rs = resultSet(
       [{ name: "Месяц", type: "date" }, { name: "Сумма", type: "double precision" }],
