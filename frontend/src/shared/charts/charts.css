@@ -18,10 +18,11 @@ figure.viz figcaption .spacer { flex: 1; }
   z-index: 5; max-width: 260px;
 }
 .tip b { font-variant-numeric: tabular-nums; }
-.kpis { display: flex; flex-wrap: wrap; gap: 12px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .kpi {
-  flex: 1 1 160px; padding: 14px 16px; border-radius: var(--radius);
+  min-width: 0; padding: 14px 16px; border-radius: var(--radius);
   background: var(--surface-2); border: 1px solid var(--border);
 }
 .kpi .label { font-size: 12px; color: var(--text-muted); }
 .kpi .value { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; margin-top: 4px; }
+.kpi .value.is-date { font-size: 22px; white-space: nowrap; }

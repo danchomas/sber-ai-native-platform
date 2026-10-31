@@ -31,6 +31,7 @@ type Client struct {
 	maxTokens   int
 	temperature float64
 	retries     int
+	noReasoning bool
 }
 
 func New(c config.LLM) *Client {
@@ -47,6 +48,11 @@ func New(c config.LLM) *Client {
 
 func (c *Client) WithHeaders(h map[string]string) *Client {
 	c.headers = h
+	return c
+}
+
+func (c *Client) WithoutReasoning() *Client {
+	c.noReasoning = true
 	return c
 }
 
@@ -72,10 +78,15 @@ type chatRequest struct {
 	ResponseFormat *responseFormat   `json:"response_format,omitempty"`
 	Tools          []toolJSON        `json:"tools,omitempty"`
 	ToolChoice     string            `json:"tool_choice,omitempty"`
+	Reasoning      *reasoning        `json:"reasoning,omitempty"`
 }
 
 type responseFormat struct {
 	Type string `json:"type"`
+}
+
+type reasoning struct {
+	Enabled bool `json:"enabled"`
 }
 
 type chatMessageJSON struct {
@@ -203,6 +214,9 @@ func (c *Client) buildRequest(req domain.Completion) chatRequest {
 	}
 	if req.JSONOnly && len(req.Tools) == 0 {
 		payload.ResponseFormat = &responseFormat{Type: "json_object"}
+	}
+	if c.noReasoning {
+		payload.Reasoning = &reasoning{Enabled: false}
 	}
 	return payload
 }

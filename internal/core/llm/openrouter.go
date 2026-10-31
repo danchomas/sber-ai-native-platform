@@ -28,10 +28,14 @@ func NewOpenRouter(c config.LLM) *Client {
 	if c.BaseURL == "" {
 		c.BaseURL = OpenRouterBaseURL
 	}
-	return New(c).WithHeaders(map[string]string{
+	return New(c).WithoutReasoning().WithHeaders(map[string]string{
 		headerReferer: appURL,
 		headerTitle:   appTitle,
 	})
+}
+
+func IsOpenRouter(baseURL string) bool {
+	return strings.TrimRight(baseURL, "/") == OpenRouterBaseURL
 }
 
 type CatalogEntry struct {

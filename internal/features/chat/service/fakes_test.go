@@ -14,13 +14,14 @@ import (
 )
 
 type scriptedLLM struct {
-	mu        sync.Mutex
-	planner   []string
-	repair    []string
-	narration string
-	overview  string
-	err       error
-	calls     map[string]int
+	mu         sync.Mutex
+	planner    []string
+	repair     []string
+	narration  string
+	narrations []string
+	overview   string
+	err        error
+	calls      map[string]int
 }
 
 func newScriptedLLM(planner ...string) *scriptedLLM {
@@ -44,6 +45,9 @@ func (l *scriptedLLM) Complete(_ context.Context, req domain.Completion) (string
 		return pop(&l.repair)
 	case strings.Contains(req.System, "объясняет результат запроса"):
 		l.calls["narration"]++
+		if len(l.narrations) > 0 {
+			return pop(&l.narrations)
+		}
 		if l.narration == "" {
 			return "", errors.New("нет ответа для изложения")
 		}

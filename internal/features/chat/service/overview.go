@@ -188,3 +188,20 @@ func formatInt(n int64) string {
 	}
 	return out
 }
+
+func humanizeTableNames(text, defaultSchema string, datasets []domain.Dataset) string {
+	for _, d := range datasets {
+		if d.TableName == "" {
+			continue
+		}
+		schema := d.Schema
+		if schema == "" {
+			schema = defaultSchema
+		}
+		name := "«" + d.Name + "»"
+		text = strings.ReplaceAll(text, "«"+schema+"."+d.TableName+"»", name)
+		text = strings.ReplaceAll(text, schema+"."+d.TableName, name)
+		text = strings.ReplaceAll(text, d.TableName, name)
+	}
+	return text
+}

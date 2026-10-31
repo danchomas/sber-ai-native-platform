@@ -2,6 +2,7 @@ package sqlguard
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/heinousness/aibi/internal/core/apperr"
@@ -160,12 +161,10 @@ func Validate(raw string, p Policy) (Result, error) {
 		return Result{}, reject(fmt.Sprintf("слишком много соединений (%d, предел %d)", joins, p.MaxJoins))
 	}
 
-	res.SQL = sql
+	res.SQL = castRoundArgs(sql, tokens)
 	if p.MaxRows > 0 && !hasTopLevelLimit(tokens) {
-		res.SQL = fmt.Sprintf("SELECT * FROM (\n%s\n) AS aibi_guarded LIMIT %d", sql, p.MaxRows)
+		res.SQL = fmt.Sprintf("SELECT * FROM (\n%s\n) AS aibi_guarded LIMIT %d", res.SQL, p.MaxRows+1)
 		res.Wrapped = true
-		res.Warnings = append(res.Warnings,
-			fmt.Sprintf("Результат ограничен %d строками.", p.MaxRows))
 	}
 	return res, nil
 }
@@ -212,6 +211,7 @@ func checkFunctions(tokens []token) error {
 
 func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 	ctes := collectCTENames(tokens)
+	inline := inlineFromKeywords(tokens)
 	seen := map[string]struct{}{}
 	var (
 		tables   []string
@@ -226,6 +226,9 @@ func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 		switch t.upper() {
 		case "FROM", "JOIN":
 		default:
+			continue
+		}
+		if inline[i] {
 			continue
 		}
 
@@ -283,6 +286,38 @@ func checkRelations(tokens []token, p Policy) ([]string, []string, error) {
 		warnings = append(warnings, "Запрос не обращается к загруженным данным.")
 	}
 	return tables, warnings, nil
+}
+
+var fromInsideCall = map[string]struct{}{
+	"EXTRACT": {}, "SUBSTRING": {}, "TRIM": {}, "OVERLAY": {}, "POSITION": {},
+}
+
+func inlineFromKeywords(tokens []token) map[int]bool {
+	inline := map[int]bool{}
+	var parens []bool
+	for i, t := range tokens {
+		switch {
+		case t.isPunct("("):
+			special := false
+			if i > 0 && tokens[i-1].kind == tokWord {
+				_, special = fromInsideCall[tokens[i-1].upper()]
+			}
+			parens = append(parens, special)
+		case t.isPunct(")"):
+			if len(parens) > 0 {
+				parens = parens[:len(parens)-1]
+			}
+		case t.isWord("FROM"):
+			if len(parens) > 0 && parens[len(parens)-1] {
+				inline[i] = true
+			}
+			if i >= 2 && tokens[i-1].isWord("DISTINCT") &&
+				(tokens[i-2].isWord("IS") || tokens[i-2].isWord("NOT")) {
+				inline[i] = true
+			}
+		}
+	}
+	return inline
 }
 
 func qualifiedName(tokens []token, start int) (parts []string, consumed int) {
@@ -375,4 +410,47 @@ func ResolveScope(sql string, scopes []domain.Scope, defaultSchema string, maxRo
 		firstErr = fmt.Errorf("%w (таблицы разных источников нельзя соединить одним запросом)", firstErr)
 	}
 	return domain.Scope{}, Result{}, firstErr
+}
+
+func castRoundArgs(sql string, tokens []token) string {
+	type insert struct {
+		pos  int
+		text string
+	}
+	var inserts []insert
+	for i := 0; i+2 < len(tokens); i++ {
+		if !tokens[i].isWord("ROUND") || !tokens[i+1].isPunct("(") {
+			continue
+		}
+		depth, comma := 0, -1
+	scan:
+		for j := i + 1; j < len(tokens); j++ {
+			switch {
+			case tokens[j].isPunct("("):
+				depth++
+			case tokens[j].isPunct(")"):
+				depth--
+				if depth == 0 {
+					break scan
+				}
+			case tokens[j].isPunct(",") && depth == 1 && comma < 0:
+				comma = j
+			}
+		}
+		if comma < 0 || comma == i+2 {
+			continue
+		}
+		inserts = append(inserts,
+			insert{tokens[i+2].pos, "("},
+			insert{tokens[comma].pos, ")::numeric"})
+	}
+	if len(inserts) == 0 {
+		return sql
+	}
+	sort.SliceStable(inserts, func(a, b int) bool { return inserts[a].pos > inserts[b].pos })
+	r := []rune(sql)
+	for _, in := range inserts {
+		r = append(r[:in.pos], append([]rune(in.text), r[in.pos:]...)...)
+	}
+	return string(r)
 }

@@ -4,6 +4,15 @@
 *.test
 coverage.out
 
+# Системные и редакторские файлы
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Материалы к выступлениям: скриншоты и презентации, не код
+/презентация/
+
 # Фронтенд
 /frontend/node_modules/
 /frontend/dist/
