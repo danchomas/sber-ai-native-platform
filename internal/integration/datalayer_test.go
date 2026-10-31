@@ -399,7 +399,7 @@ func TestDashboardRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	report := upload(t, e, "orders", ordersCSV)
-	svc := dashsvc.New(e.dashes, e.datasets, e.raw, queryCfg, true, testLogger())
+	svc := dashsvc.New(e.dashes, e.datasets, e.raw, queryCfg, true, 24*time.Hour, testLogger())
 
 	created, err := svc.CreateFromWidgets(ctx, nil, "Сводка по заказам", "тест", []domain.Widget{
 		{

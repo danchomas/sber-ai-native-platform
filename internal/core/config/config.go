@@ -19,6 +19,12 @@ type Config struct {
 	Ingest   Ingest
 	Query    Query
 	Agent    Agent
+
+	Dashboards Dashboards
+}
+
+type Dashboards struct {
+	TrashRetention time.Duration
 }
 
 type App struct {
@@ -60,6 +66,7 @@ type LLM struct {
 	Temperature float64
 	Retries     int
 	Enabled     bool
+	Providers   []string
 }
 
 type Ingest struct {
@@ -128,6 +135,7 @@ func Load() (*Config, error) {
 			Temperature: float("LLM_TEMPERATURE", 0.1),
 			Retries:     integer("LLM_RETRIES", 2),
 			Enabled:     boolean("LLM_ENABLED", true),
+			Providers:   list("LLM_PROVIDER_ORDER", nil),
 		},
 		Ingest: Ingest{
 			MaxUploadBytes:   int64(integer("INGEST_MAX_UPLOAD_MB", 512)) << 20,
@@ -148,6 +156,9 @@ func Load() (*Config, error) {
 			MaxConcurrent: integer("AGENT_MAX_CONCURRENT", 4),
 			QueueWait:     duration("AGENT_QUEUE_WAIT", 30*time.Second),
 		},
+		Dashboards: Dashboards{
+			TrashRetention: duration("DASHBOARD_TRASH_RETENTION", 24*time.Hour),
+		},
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -166,6 +177,9 @@ func (c *Config) validate() error {
 	}
 	if c.Postgres.DSN == "" {
 		errs = append(errs, errors.New("DATABASE_URL обязателен"))
+	}
+	if c.Dashboards.TrashRetention <= 0 {
+		errs = append(errs, fmt.Errorf("DASHBOARD_TRASH_RETENTION (%s) должен быть больше нуля", c.Dashboards.TrashRetention))
 	}
 	if !isIdent(c.Postgres.RawSchema) {
 		errs = append(errs, fmt.Errorf("RAW_SCHEMA %q не является корректным идентификатором", c.Postgres.RawSchema))

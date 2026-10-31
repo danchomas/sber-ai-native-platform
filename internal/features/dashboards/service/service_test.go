@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +22,11 @@ import (
 type fakeRepo struct {
 	dashboard *domain.Dashboard
 	added     []domain.Widget
+
+	trash      []domain.TrashItem
+	restoreErr error
+	retention  time.Duration
+	purges     atomic.Int32
 }
 
 func (r *fakeRepo) Create(context.Context, *domain.Dashboard) error { return nil }
@@ -40,6 +46,23 @@ func (r *fakeRepo) AddWidget(_ context.Context, _ uuid.UUID, w *domain.Widget) e
 }
 func (r *fakeRepo) DeleteWidget(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 func (r *fakeRepo) Rename(context.Context, uuid.UUID, string) error          { return nil }
+func (r *fakeRepo) Trash(_ context.Context, retention time.Duration) ([]domain.TrashItem, error) {
+	r.retention = retention
+	return r.trash, nil
+}
+func (r *fakeRepo) RestoreDashboard(_ context.Context, _ uuid.UUID, retention time.Duration) error {
+	r.retention = retention
+	return r.restoreErr
+}
+func (r *fakeRepo) RestoreWidget(_ context.Context, _, _ uuid.UUID, retention time.Duration) error {
+	r.retention = retention
+	return r.restoreErr
+}
+func (r *fakeRepo) PurgeDeleted(_ context.Context, retention time.Duration) (int64, error) {
+	r.retention = retention
+	r.purges.Add(1)
+	return 0, nil
+}
 
 type fakeCatalog struct{ datasets []domain.Dataset }
 
@@ -81,7 +104,7 @@ func (e *fakeExecutor) Query(_ context.Context, _ domain.QueryTarget, sql string
 }
 
 func newTestService(repo *fakeRepo, exec *fakeExecutor, allowSQL bool) *Service {
-	return New(repo, newFakeCatalog(), exec, config.Query{MaxRows: 1000}, allowSQL,
+	return New(repo, newFakeCatalog(), exec, config.Query{MaxRows: 1000}, allowSQL, 24*time.Hour,
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -205,5 +228,54 @@ func TestAddWidgetRejectsRawSQLByDefault(t *testing.T) {
 	unsafe := domain.Widget{Title: "SQL", SQL: "SELECT pg_read_file('/etc/passwd')"}
 	if _, err := newTestService(repo, &fakeExecutor{}, true).AddWidget(context.Background(), repo.dashboard.ID, unsafe); !errors.Is(err, apperr.ErrUnsafeQuery) {
 		t.Fatalf("опасный SQL не проходит sqlguard и при разрешённом SQL, получено %v", err)
+	}
+}
+
+func TestTrashUsesRetention(t *testing.T) {
+	deleted := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	repo := &fakeRepo{trash: []domain.TrashItem{{Kind: domain.TrashKindDashboard, ID: uuid.New(), DeletedAt: deleted}}}
+	svc := newTestService(repo, &fakeExecutor{}, false)
+
+	items, err := svc.Trash(context.Background())
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if want := deleted.Add(24 * time.Hour); !items[0].ExpiresAt.Equal(want) {
+		t.Fatalf("срок хранения: %v, ожидалось %v", items[0].ExpiresAt, want)
+	}
+	if repo.retention != 24*time.Hour {
+		t.Fatalf("в запрос передан срок %v", repo.retention)
+	}
+}
+
+func TestRestoreReportsExpiredItem(t *testing.T) {
+	repo := &fakeRepo{restoreErr: apperr.ErrNotFound}
+	svc := newTestService(repo, &fakeExecutor{}, false)
+
+	if err := svc.RestoreDashboard(context.Background(), uuid.New()); !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("дашборд: %v", err)
+	}
+	if err := svc.RestoreWidget(context.Background(), uuid.New(), uuid.New()); !errors.Is(err, apperr.ErrNotFound) {
+		t.Fatalf("виджет: %v", err)
+	}
+}
+
+func TestPurgeLoopCleansAtStartAndStops(t *testing.T) {
+	repo := &fakeRepo{}
+	svc := newTestService(repo, &fakeExecutor{}, false)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.PurgeLoop(ctx)
+		close(done)
+	}()
+	for repo.purges.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("очистка не остановилась по контексту")
 	}
 }

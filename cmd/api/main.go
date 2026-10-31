@@ -104,7 +104,8 @@ func run() error {
 		cfg.Postgres.RawSchema, cfg.Ingest, cfg.Query, log)
 	sources := srcsvc.New(sourceRepo, datasetRepo, rawRepo,
 		srcpg.NewIntrospector(registry), datasets, registry.Forget, log)
-	dashboards := dashsvc.New(dashboardRepo, datasets, rawRepo, cfg.Query, cfg.Agent.AllowRawSQL, log)
+	dashboards := dashsvc.New(dashboardRepo, datasets, rawRepo, cfg.Query, cfg.Agent.AllowRawSQL, cfg.Dashboards.TrashRetention, log)
+	go dashboards.PurgeLoop(ctx)
 	chat := chatsvc.New(datasets, rawRepo, sessionRepo, dashboards, providers, cfg.Query, cfg.Agent, log)
 
 	router := corehttp.NewRouter(corehttp.RouterOptions{

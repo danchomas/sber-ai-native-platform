@@ -32,6 +32,7 @@ type Client struct {
 	temperature float64
 	retries     int
 	noReasoning bool
+	providers   []string
 }
 
 func New(c config.LLM) *Client {
@@ -48,6 +49,11 @@ func New(c config.LLM) *Client {
 
 func (c *Client) WithHeaders(h map[string]string) *Client {
 	c.headers = h
+	return c
+}
+
+func (c *Client) WithProviders(order []string) *Client {
+	c.providers = order
 	return c
 }
 
@@ -79,6 +85,11 @@ type chatRequest struct {
 	Tools          []toolJSON        `json:"tools,omitempty"`
 	ToolChoice     string            `json:"tool_choice,omitempty"`
 	Reasoning      *reasoning        `json:"reasoning,omitempty"`
+	Provider       *providerRouting  `json:"provider,omitempty"`
+}
+
+type providerRouting struct {
+	Order []string `json:"order"`
 }
 
 type responseFormat struct {
@@ -217,6 +228,9 @@ func (c *Client) buildRequest(req domain.Completion) chatRequest {
 	}
 	if c.noReasoning {
 		payload.Reasoning = &reasoning{Enabled: false}
+	}
+	if len(c.providers) > 0 {
+		payload.Provider = &providerRouting{Order: c.providers}
 	}
 	return payload
 }

@@ -40,10 +40,6 @@ type queryResponse struct {
 }
 
 func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
-	if !h.allowSQL {
-		response.Error(w, r, fmt.Errorf("%w: свободный SQL отключён (AGENT_ALLOW_RAW_SQL=false)", apperr.ErrUnsafeQuery))
-		return
-	}
 	var req queryRequest
 	if err := request.Decode(r, &req); err != nil {
 		response.Error(w, r, err)
@@ -68,6 +64,10 @@ func (h *Handler) Run(w http.ResponseWriter, r *http.Request) {
 	scope, checked, err := sqlguard.ResolveScope(req.SQL, scopes, h.catalog.Schema(), maxRows)
 	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	if !h.allowSQL {
+		response.Error(w, r, fmt.Errorf("%w: свободный SQL отключён (AGENT_ALLOW_RAW_SQL=false)", apperr.ErrUnsafeQuery))
 		return
 	}
 

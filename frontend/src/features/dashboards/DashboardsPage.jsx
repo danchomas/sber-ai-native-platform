@@ -1,6 +1,10 @@
+import { useState } from "react";
+
 import { PeriodBar } from "./components/PeriodBar.jsx";
 import { Summary } from "./components/Summary.jsx";
 import { TitleEditor } from "./components/TitleEditor.jsx";
+import { TrashPanel } from "./components/TrashPanel.jsx";
+import { UndoToast } from "./components/UndoToast.jsx";
 import { Widget } from "./components/Widget.jsx";
 import { useDashboards } from "./hooks/useDashboards.js";
 import { fmtDay } from "./lib/period.js";
@@ -14,8 +18,13 @@ import "./styles.css";
 
 export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
   const {
-    items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename, exporting, exportFile,
+    items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename, exporting, exportFile, exportImage,
+    trash, loadTrash, undo, setUndo, restore,
   } = useDashboards({ openId, onCount });
+  const [trashOpen, setTrashOpen] = useState(false);
+  const bringBack = async (item) => {
+    if (await restore(item)) onOpen(item.dashboard_id);
+  };
   const widgets = current?.widgets || [];
 
   return (
@@ -23,6 +32,16 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
       <div className="view-head">
         <h2>Дашборды</h2>
         <p>Ваши показатели и визуализации — всегда под рукой</p>
+        <button
+          className="icon-btn trash-toggle"
+          aria-expanded={trashOpen}
+          onClick={() => {
+            if (!trashOpen) loadTrash();
+            setTrashOpen(!trashOpen);
+          }}
+        >
+          <Icon name="trash" size={14} /> Корзина{trash.length ? ` (${trash.length})` : ""}
+        </button>
       </div>
 
       <div className="scroll">
@@ -46,6 +65,8 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
           ) : null}
 
           <ErrorBanner error={error} onRetry={reload} />
+
+          {trashOpen ? <TrashPanel items={trash} onRestore={bringBack} /> : null}
 
           {!items.length ? (
             <EmptyState title="Панелей пока нет">
@@ -75,28 +96,9 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                   </button>
                   <button
                     className="icon-btn"
-                    onClick={() => exportFile("xlsx")}
-                    disabled={loading || !!exporting}
-                    title="Выгрузить в Excel: сводка и лист с данными каждого виджета"
-                  >
-                    <Icon name="download" size={14} /> {exporting === "xlsx" ? "Выгружаю…" : "Excel"}
-                  </button>
-                  <button
-                    className="icon-btn"
-                    onClick={() => exportFile("csv")}
-                    disabled={loading || !!exporting}
-                    title="Выгрузить данные всех виджетов в CSV"
-                  >
-                    <Icon name="download" size={14} /> {exporting === "csv" ? "Выгружаю…" : "CSV"}
-                  </button>
-                  <button className="icon-btn" onClick={() => window.print()} title="Напечатать или сохранить в PDF">
-                    <Icon name="print" size={14} /> PDF
-                  </button>
-                  <button
-                    className="icon-btn"
                     onClick={async () => {
-                      if (!window.confirm(`Удалить дашборд «${current.title}»?`)) return;
-                      await remove(current.id);
+                      if (!window.confirm(`Удалить дашборд «${current.title}»? Его можно будет вернуть из корзины в течение суток.`)) return;
+                      await remove(current.id, current.title);
                       onOpen(null);
                     }}
                   >
@@ -119,11 +121,12 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                       widget={w}
                       theme={theme}
                       filtered={!!current.period}
-                      exporting={exporting === `csv:${w.id}`}
-                      onExport={w.id && !w.error ? () => exportFile("csv", w.id) : undefined}
+                      exporting={!!exporting && exporting.endsWith(`:${w.id}`)}
+                      onExportImage={w.id && !w.error ? (node) => exportImage(node, `${current.title} — ${w.title}`, `png:${w.id}`) : undefined}
+                      onExportTable={w.id && !w.error ? (format) => exportFile(format, w.id) : undefined}
                       onRemove={async () => {
-                        if (!window.confirm(`Убрать виджет «${w.title}» с дашборда?`)) return;
-                        await removeWidget(current.id, w.id);
+                        if (!window.confirm(`Убрать виджет «${w.title}» с дашборда? Его можно будет вернуть из корзины в течение суток.`)) return;
+                        await removeWidget(current.id, w.id, w.title);
                       }}
                     />
                   ))}
@@ -140,6 +143,8 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
           ) : null}
         </div>
       </div>
+
+      {undo ? <UndoToast item={undo} onRestore={() => bringBack(undo)} onClose={() => setUndo(null)} /> : null}
     </section>
   );
 }

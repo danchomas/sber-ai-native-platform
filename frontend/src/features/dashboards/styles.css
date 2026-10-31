@@ -41,11 +41,15 @@
 .dash-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; transition: opacity .2s; }
 .dash-grid.stale { opacity: .55; }
 .widget { position: relative; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; min-width: 0; }
-.widget-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 4px; padding-right: 64px; }
+.widget-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 4px; padding-right: 110px; }
 .widget-head h4 { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .badge { flex: none; padding: 2px 8px; border-radius: 999px; font-size: 11px; color: var(--text-secondary); background: var(--surface-2); border: 1px solid var(--border); }
 .widget-tools { position: absolute; top: 12px; right: 12px; display: flex; gap: 4px; opacity: 0; transition: opacity .15s; z-index: 1; }
-.widget:hover .widget-tools, .widget-tools:focus-within { opacity: 1; }
+.widget:hover .widget-tools, .widget-tools:focus-within, .widget-tools:has(.export-menu.open) { opacity: 1; }
+.export-menu { position: relative; }
+.export-menu-list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 5; display: flex; flex-direction: column; min-width: 150px; padding: 4px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1); box-shadow: 0 8px 24px rgb(0 0 0 / 16%); }
+.export-menu-item { padding: 8px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--text-primary); font-size: 13px; text-align: left; cursor: pointer; white-space: nowrap; }
+.export-menu-item:hover, .export-menu-item:focus-visible { background: var(--accent-soft); }
 @media (hover: none) { .widget-tools { opacity: 1; } }
 
 @media (max-width: 880px) {
@@ -53,7 +57,20 @@
   .dash-grid .widget { grid-column: 1 / -1 !important; }
 }
 
+.trash-toggle { margin-left: auto; }
+.trash-panel { margin-bottom: 16px; padding: 16px 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.trash-panel h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.trash-hint, .trash-empty { margin: 4px 0 0; font-size: 12px; color: var(--text-muted); }
+.trash-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
+.trash-item { display: flex; align-items: center; gap: 12px; }
+.trash-info { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.trash-title { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.trash-meta { font-size: 12px; color: var(--text-muted); }
+.undo-toast { position: fixed; bottom: 24px; left: 50%; z-index: 20; display: flex; align-items: center; gap: 10px; max-width: min(640px, calc(100vw - 32px)); padding: 10px 12px 10px 16px; transform: translateX(-50%); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); box-shadow: 0 8px 28px rgb(0 0 0 / 18%); }
+.undo-text { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+
 @media print {
+  .undo-toast, .trash-panel,
   .sidebar, .view:not(.active), .view-head, .dash-list, .ds-actions, .period-bar,
   .widget-tools, .title-line .icon-btn, .viz figcaption .icon-btn { display: none !important; }
   .main, .view.active, .scroll { display: block !important; overflow: visible !important; padding: 0 !important; }

@@ -255,8 +255,11 @@ func TestAgentClarifiesWhenNothingComputed(t *testing.T) {
 	if answer.Intent != domain.IntentClarify || len(answer.Followups) == 0 {
 		t.Fatalf("без результата ожидалось уточнение с вариантами: %+v", answer)
 	}
-	if model.conversations() != maxFailStreak {
-		t.Fatalf("цикл должен остановиться после %d ошибок подряд, обращений %d", maxFailStreak, model.conversations())
+	if model.conversations() != 3 {
+		t.Fatalf("цикл должен остановиться после первого запроса и двух попыток исправления, обращений %d", model.conversations())
+	}
+	if !strings.Contains(answer.Text, "2 попытки") || !strings.Contains(answer.Text, "нет в каталоге") {
+		t.Fatalf("ожидался честный отказ с причиной: %q", answer.Text)
 	}
 }
 

@@ -21,7 +21,10 @@ import (
 	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
-const widgetConcurrency = 4
+const (
+	widgetConcurrency = 4
+	purgeInterval     = time.Hour
+)
 
 type Catalog interface {
 	List(ctx context.Context) ([]domain.Dataset, error)
@@ -40,8 +43,9 @@ type Service struct {
 	exec    Executor
 	cfg     config.Query
 
-	allowSQL bool
-	log      *slog.Logger
+	allowSQL  bool
+	retention time.Duration
+	log       *slog.Logger
 }
 
 func New(
@@ -50,9 +54,10 @@ func New(
 	exec Executor,
 	cfg config.Query,
 	allowSQL bool,
+	retention time.Duration,
 	log *slog.Logger,
 ) *Service {
-	return &Service{repo: repo, catalog: catalog, exec: exec, cfg: cfg, allowSQL: allowSQL, log: log}
+	return &Service{repo: repo, catalog: catalog, exec: exec, cfg: cfg, allowSQL: allowSQL, retention: retention, log: log}
 }
 
 func (s *Service) CreateFromWidgets(
@@ -359,4 +364,42 @@ func (s *Service) checkWidget(ctx context.Context, w domain.Widget) (domain.Widg
 
 func (s *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
+}
+
+func (s *Service) Trash(ctx context.Context) ([]domain.TrashItem, error) {
+	items, err := s.repo.Trash(ctx, s.retention)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		items[i].ExpiresAt = items[i].DeletedAt.Add(s.retention)
+	}
+	return items, nil
+}
+
+func (s *Service) RestoreDashboard(ctx context.Context, id uuid.UUID) error {
+	return s.repo.RestoreDashboard(ctx, id, s.retention)
+}
+
+func (s *Service) RestoreWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error {
+	return s.repo.RestoreWidget(ctx, dashboardID, widgetID, s.retention)
+}
+
+func (s *Service) PurgeLoop(ctx context.Context) {
+	ticker := time.NewTicker(purgeInterval)
+	defer ticker.Stop()
+	for {
+		purged, err := s.repo.PurgeDeleted(ctx, s.retention)
+		switch {
+		case err != nil && ctx.Err() == nil:
+			s.log.WarnContext(ctx, "корзина дашбордов не очищена", "error", err)
+		case purged > 0:
+			s.log.InfoContext(ctx, "корзина дашбордов очищена", "deleted", purged)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }

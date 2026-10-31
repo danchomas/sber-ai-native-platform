@@ -49,6 +49,17 @@ function arePeriods(labels) {
   return labels.length > 1 && labels.every((l) => periodKey(l) !== null);
 }
 
+function periodLabel(result, index, value) {
+  const col = result.columns[index];
+  const m = isTemporalCol(col) ? /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value ?? "")) : null;
+  if (!m) return fmtCell(value);
+  const [, year, month, day] = m;
+  if (col.name === "Квартал") return `${Math.ceil(Number(month) / 3)} кв. ${year}`;
+  if (col.name === "Месяц") return `${month}.${year}`;
+  if (col.name === "Год") return year;
+  return `${day}.${month}.${year}`;
+}
+
 function shape(spec, result) {
   const xi = colIndex(result, spec.x);
   const si = colIndex(result, spec.series);
@@ -61,7 +72,7 @@ function shape(spec, result) {
     const names = [];
     const cells = new Map();
     for (const row of result.rows) {
-      const cat = fmtCell(row[xi]);
+      const cat = periodLabel(result, xi, row[xi]);
       const name = fmtCell(row[si]);
       if (!cats.includes(cat)) cats.push(cat);
       if (!names.includes(name)) names.push(name);
@@ -79,10 +90,10 @@ function shape(spec, result) {
   }
 
   let rows = result.rows;
-  if (xi >= 0 && arePeriods(rows.map((row) => fmtCell(row[xi])))) {
-    rows = [...rows].sort((a, b) => periodKey(fmtCell(a[xi])) - periodKey(fmtCell(b[xi])));
+  if (xi >= 0 && arePeriods(rows.map((row) => periodLabel(result, xi, row[xi])))) {
+    rows = [...rows].sort((a, b) => periodKey(periodLabel(result, xi, a[xi])) - periodKey(periodLabel(result, xi, b[xi])));
   }
-  const cats = rows.map((row, i) => (xi >= 0 ? fmtCell(row[xi]) : String(i + 1)));
+  const cats = rows.map((row, i) => (xi >= 0 ? periodLabel(result, xi, row[xi]) : String(i + 1)));
   const names = yNames.length ? yNames : result.columns.filter(isNumericCol).map((c) => c.name);
   return {
     categories: cats,
@@ -295,7 +306,7 @@ function bars(data, spec, t, height) {
 
 function lines(data, spec, t, height, area) {
   const H = height;
-  const box = { x: 58, y: 12, w: W - 74, h: H - 58 };
+  const box = { x: 58, y: 12, w: W - 130, h: H - 58 };
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
   const scale = extent(data.series);
   axisY(svg, scale, box, t);
@@ -519,14 +530,15 @@ function kpis(spec, result) {
 }
 
 function tableView(result, limit) {
+  result = { ...result, rows: result?.rows ?? [], columns: result?.columns ?? [] };
   const rows = result.rows.slice(0, limit || 200);
   return h("div", { class: "table-wrap" }, [
     h("table", { class: "data" }, [
       h("thead", null, h("tr", null, result.columns.map((c) => h("th", { text: c.name, title: c.name })))),
       h("tbody", null, rows.map((row) => h("tr", null, row.map((cell, i) => h("td", {
         class: isNumericCol(result.columns[i]) ? "num" : "",
-        text: fmtCell(cell),
-        title: fmtCell(cell),
+        text: periodLabel(result, i, cell),
+        title: periodLabel(result, i, cell),
       }))))),
     ]),
   ]);
@@ -545,6 +557,7 @@ function categoryLegend(data) {
 }
 
 function render(spec, result, options) {
+  result = { ...result, rows: result?.rows ?? [], columns: result?.columns ?? [] };
   const opts = options || {};
   const height = opts.height || 300;
   const type = (spec && spec.type) || "table";

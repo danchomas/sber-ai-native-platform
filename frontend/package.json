@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "shots": "node tools/screenshot.mjs"
+    "shots": "node tools/screenshot.mjs",
+    "scenarios": "node tools/scenarios.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

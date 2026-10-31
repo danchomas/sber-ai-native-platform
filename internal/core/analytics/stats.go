@@ -399,6 +399,22 @@ func Forecast(points []Point, grain Grain, horizon int) ([]ForecastPoint, Foreca
 	return out, summary, nil
 }
 
+func CompletePeriods(points []Point, grain Grain, lastDate time.Time) ([]Point, bool) {
+	step, err := periodStep(grain)
+	if err != nil || len(points) == 0 {
+		return points, false
+	}
+	start, err := parsePeriod(points[len(points)-1].Period)
+	if err != nil {
+		return points, false
+	}
+	nextDay := time.Date(lastDate.Year(), lastDate.Month(), lastDate.Day()+1, 0, 0, 0, 0, time.UTC)
+	if step(start, 1).After(nextDay) {
+		return points[:len(points)-1], true
+	}
+	return points, false
+}
+
 func periodStep(grain Grain) (func(time.Time, int) time.Time, error) {
 	switch grain {
 	case GrainDay:

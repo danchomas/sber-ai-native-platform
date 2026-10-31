@@ -206,3 +206,23 @@ func TestFit(t *testing.T) {
 		})
 	}
 }
+
+func TestCompletePeriods(t *testing.T) {
+	points := []Point{{Period: "2026-04-01"}, {Period: "2026-07-01"}}
+	cases := []struct {
+		name string
+		last time.Time
+		cut  bool
+	}{
+		{"квартал закончен", time.Date(2026, 9, 30, 23, 54, 0, 0, time.UTC), false},
+		{"квартал не закончен", time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC), true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, cut := CompletePeriods(points, GrainQuarter, tc.last)
+			if cut != tc.cut || (cut && len(got) != 1) || (!cut && len(got) != 2) {
+				t.Fatalf("cut=%v, точек %d", cut, len(got))
+			}
+		})
+	}
+}

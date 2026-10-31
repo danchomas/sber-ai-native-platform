@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+.claude
+datasets
+sber-ai-native-platform
+frontend
+docs
+bin
+tmp
+*.pdf
+.DS_Store

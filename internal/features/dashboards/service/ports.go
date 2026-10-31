@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -17,4 +18,9 @@ type DashboardRepository interface {
 	AddWidget(ctx context.Context, dashboardID uuid.UUID, w *domain.Widget) error
 	DeleteWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
 	Rename(ctx context.Context, id uuid.UUID, title string) error
+
+	Trash(ctx context.Context, retention time.Duration) ([]domain.TrashItem, error)
+	RestoreDashboard(ctx context.Context, id uuid.UUID, retention time.Duration) error
+	RestoreWidget(ctx context.Context, dashboardID, widgetID uuid.UUID, retention time.Duration) error
+	PurgeDeleted(ctx context.Context, retention time.Duration) (int64, error)
 }

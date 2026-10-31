@@ -17,12 +17,27 @@ type Query struct {
 	Filters []Filter   `json:"filters,omitempty"`
 	Sort    *Sort      `json:"sort,omitempty"`
 	Limit   int        `json:"limit,omitempty"`
+
+	Subtotals bool `json:"subtotals,omitempty"`
 }
+
+const (
+	SubtotalAll   = "Все"
+	SubtotalTotal = "Итого"
+)
 
 type Metric struct {
 	Func   Func   `json:"fn"`
 	Column string `json:"column,omitempty"`
+	Expr   string `json:"expr,omitempty"`
+	Per    string `json:"per,omitempty"`
 	Label  string `json:"label,omitempty"`
+	Scale  *Scale `json:"-"`
+}
+
+type Scale struct {
+	Column string
+	Factor float64
 }
 
 type TimeGroup struct {
@@ -96,7 +111,7 @@ const (
 var Ops = []Op{OpEq, OpNe, OpGt, OpGte, OpLt, OpLte, OpIn, OpNotIn, OpBetween, OpContains, OpIsNull, OpNotNull}
 
 const (
-	MaxMetrics     = 6
+	MaxMetrics     = 8
 	MaxGroupBy     = 3
 	MaxFilters     = 10
 	MaxJoins       = 2

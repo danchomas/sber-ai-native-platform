@@ -50,18 +50,27 @@ const PATHS = {
       <path d="m9 12 2.2 2.2L15.5 10" />
     </>
   ),
-  print: (
+  trash: (
     <>
-      <path d="M7 9V4h10v5" />
-      <path d="M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2" />
-      <path d="M7 14h10v6H7z" />
+      <path d="M4 7h16M9 7V4.5h6V7" />
+      <path d="M6.5 7l1 13h9l1-13M10 11v5M14 11v5" />
     </>
   ),
-  download: (
+
+  imageDownload: (
     <>
-      <path d="M12 4v11" />
-      <path d="m7 10 5 5 5-5" />
-      <path d="M5 20h14" />
+      <rect x="2.5" y="3" width="13" height="13" rx="2" />
+      <circle cx="6.5" cy="7" r="1.2" />
+      <path d="M15.5 12 12 8.5 5 16" />
+      <path d="M19 12v9M15.5 17.5 19 21l3.5-3.5" />
+    </>
+  ),
+
+  tableDownload: (
+    <>
+      <rect x="2.5" y="3" width="13" height="13" rx="2" />
+      <path d="M2.5 7.5h13M2.5 11.5h13M8 7.5V16" />
+      <path d="M19 12v9M15.5 17.5 19 21l3.5-3.5" />
     </>
   ),
   edit: <path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4" />,

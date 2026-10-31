@@ -112,6 +112,10 @@ datasets: ## Загрузить наборы из ./datasets (можно ука�
 scenarios: ## Прогнать вопросы сценариев ТЗ и атаки через API (нужен поднятый стенд и jq)
 	scripts/scenarios.sh
 
+.PHONY: scenarios-ui
+scenarios-ui: ## Пройти 19 вопросов ТЗ через интерфейс со снимками в frontend/.screenshots/scenarios
+	cd frontend && npm run scenarios -- http://localhost:3000 .screenshots/scenarios
+
 .PHONY: psql
 psql: ## Консоль PostgreSQL стенда
 	docker compose exec postgres psql -U aibi -d aibi

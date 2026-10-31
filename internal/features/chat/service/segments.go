@@ -10,11 +10,13 @@ import (
 
 	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/domain"
+	"github.com/heinousness/aibi/internal/core/sqlguard"
 )
 
 const (
 	toolCompare = "compare_segments"
 	toolWhatIf  = "what_if"
+	toolRecalc  = "recalculate"
 
 	analysisWhatIf = "what_if"
 
@@ -26,13 +28,6 @@ func segmentTools() []struct {
 	name, desc string
 	params     schema
 } {
-	metric := func(desc string) schema {
-		return object(schema{
-			"fn":     enum(analytics.Funcs, "что считать"),
-			"column": text("колонка датасета"),
-			"label":  text("подпись по-русски"),
-		}, "fn")
-	}
 	return []struct {
 		name, desc string
 		params     schema
@@ -46,21 +41,35 @@ func segmentTools() []struct {
 				"dataset":  text("имя датасета"),
 				"segments": list(schema{"type": "string"}, "колонки-признаки сегмента, 1-2"),
 				"values":   schema{"type": "array", "description": "какие значения сравнить, например [\"X\", \"Y\"]; пусто — крупнейшие сегменты"},
-				"metrics":  list(metric(""), "что сравнить; пусто — средние всех числовых показателей"),
+				"metrics":  list(metricSchema("что считать"), "что сравнить; пусто — средние всех числовых показателей"),
 				"filters":  filtersSchema(),
 				"title":    text("заголовок результата"),
 			}, "dataset", "segments"),
 		},
 		{
 			toolWhatIf,
-			"Сценарий «что если»: по истории оценивает, как показатель-цель зависит от показателя-драйвера, и считает, " +
-				"как изменится цель, если драйвер изменить на change_pct процентов. Для вопросов «как изменится Y, если поднять цену X». " +
+			"Зависимость по истории: как показатель-цель реагировал на показатель-драйвер и что будет с целью, если драйвер изменить на change_pct процентов. " +
+				"Для вопросов о реакции и зависимости («как спрос реагирует на цену»). Чтобы просто пересчитать показатель при новой цене, есть recalculate. " +
 				"Это оценка по прошлой зависимости, а не доказанная причинность — скажи об этом.",
 			seriesSchema(schema{
-				"driver":     metric("драйвер"),
-				"target":     metric("цель"),
+				"driver":     metricSchema("драйвер"),
+				"target":     metricSchema("цель"),
 				"change_pct": schema{"type": "number", "description": "изменение драйвера в процентах, например 10 или -5"},
 			}, "driver", "target", "change_pct"),
+		},
+		{
+			toolRecalc,
+			"Пересчёт показателя при изменении колонки на change_pct процентов и неизменном объёме. " +
+				"Для вопросов «как изменится выручка, если поднять цену товаров категории X на 10%». " +
+				"Изменение применяется к строкам из filters, а итоги в результате — по всем данным: так и называй их в ответе.",
+			object(schema{
+				"dataset":    text("имя датасета"),
+				"target":     metricSchema("обычно sum"),
+				"column":     text("числовая колонка, которая меняется, например цена; должна входить в формулу target"),
+				"change_pct": schema{"type": "number", "description": "изменение колонки в процентах, например 10 или -5"},
+				"filters":    filtersSchema(),
+				"title":      text("заголовок результата"),
+			}, "dataset", "target", "column", "change_pct"),
 		},
 	}
 }
@@ -86,7 +95,13 @@ func (r *agentRun) compareSegments(ctx context.Context, raw []byte) (string, int
 		{Func: analytics.FuncShare, Label: "Доля, %"},
 	}
 	if len(args.Metrics) > 0 {
-		metrics = append(metrics, args.Metrics...)
+		for _, m := range args.Metrics {
+			fn := analytics.Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
+			if (fn == analytics.FuncCount || fn == analytics.FuncShare) && m.Column == "" && m.Expr == "" && m.Per == "" {
+				continue
+			}
+			metrics = append(metrics, m)
+		}
 	} else {
 		metrics = append(metrics, r.measureAverages(args.Dataset)...)
 	}
@@ -105,6 +120,10 @@ func (r *agentRun) compareSegments(ctx context.Context, raw []byte) (string, int
 	q := analytics.Query{
 		Dataset: args.Dataset, GroupBy: args.Segments, Metrics: metrics, Filters: filters,
 		Sort: &analytics.Sort{By: "Записей", Desc: true}, Limit: maxSegments,
+		Subtotals: len(args.Segments) == 2 && r.fewCombinations(args.Dataset, args.Segments),
+	}
+	if q.Subtotals {
+		q.Limit = 2 * maxSegments
 	}
 	compiled, err := analytics.Compile(q, r.catalog, r.s.cfg.MaxRows)
 	if err != nil {
@@ -117,13 +136,43 @@ func (r *agentRun) compareSegments(ctx context.Context, raw []byte) (string, int
 	}
 
 	res := r.results[len(r.results)-1]
+	res.segments = true
 	payload := r.resultOutput(res)
+	if q.Subtotals {
+		payload["subtotals"] = "строки «" + analytics.SubtotalAll + "» и «" + analytics.SubtotalTotal + "» — подытоги и общий итог, посчитанные базой: бери их, а не складывай сам"
+	}
 	if diffs := segmentDifferences(res.result, len(args.Segments)); len(diffs) > 0 {
 		payload["key_differences"] = diffs
 	} else {
 		payload["note"] = "сегментов меньше двух: сравнивать не с чем"
 	}
 	return encodeOutput(payload), rows, nil
+}
+
+func (r *agentRun) fewCombinations(dataset string, segments []string) bool {
+	combinations := int64(1)
+	for _, name := range segments {
+		column, ok := r.findColumn(dataset, name)
+		if !ok || column.Profile == nil || column.Profile.DistinctCount == 0 {
+			return false
+		}
+		combinations *= column.Profile.DistinctCount
+	}
+	return combinations <= maxSegments
+}
+
+func (r *agentRun) findColumn(dataset, name string) (domain.Column, bool) {
+	for _, d := range r.datasets {
+		if !strings.EqualFold(d.Name, dataset) && !strings.EqualFold(d.TableName, dataset) {
+			continue
+		}
+		for _, c := range d.Columns {
+			if strings.EqualFold(c.Name, name) || strings.EqualFold(c.SourceName, name) {
+				return c, true
+			}
+		}
+	}
+	return domain.Column{}, false
 }
 
 func (r *agentRun) measureAverages(dataset string) []analytics.Metric {
@@ -161,7 +210,7 @@ func segmentDifferences(rs *domain.ResultSet, keys int) []map[string]any {
 		found := false
 		for _, row := range rs.Rows {
 			v, ok := toNumber(row[col])
-			if !ok {
+			if !ok || isSubtotalRow(row[:keys]) {
 				continue
 			}
 			name := segmentName(row[:keys])
@@ -197,6 +246,15 @@ func segmentDifferences(rs *domain.ResultSet, keys int) []map[string]any {
 		out = append(out, item)
 	}
 	return out
+}
+
+func isSubtotalRow(keys []any) bool {
+	for _, k := range keys {
+		if k == analytics.SubtotalAll || k == analytics.SubtotalTotal {
+			return true
+		}
+	}
+	return false
 }
 
 func segmentName(keys []any) string {
@@ -314,6 +372,110 @@ func (r *agentRun) whatIf(ctx context.Context, raw []byte) (string, int, error) 
 			driver.Label, target.Label, reg.Elasticity),
 	}
 	return encodeOutput(payload), len(out.Rows), nil
+}
+
+func (r *agentRun) recalculate(ctx context.Context, raw []byte) (string, int, error) {
+	var args struct {
+		Dataset   string             `json:"dataset"`
+		Target    *analytics.Metric  `json:"target"`
+		Column    string             `json:"column"`
+		ChangePct *float64           `json:"change_pct"`
+		Filters   []analytics.Filter `json:"filters"`
+		Title     string             `json:"title"`
+	}
+	if err := decodeArgs(normalizeArgs(raw, "filters"), &args); err != nil {
+		return "", 0, err
+	}
+	if args.Target == nil || strings.TrimSpace(args.Column) == "" || args.ChangePct == nil {
+		return "", 0, errors.New("нужны target, column и change_pct")
+	}
+	change := *args.ChangePct
+	if change <= -100 || change > 1000 {
+		return "", 0, errors.New("change_pct должен быть больше -100 и не больше 1000")
+	}
+
+	base := *args.Target
+	base.Label = orDefault(base.Label, "Показатель")
+	if strings.TrimSpace(base.Expr) == "" {
+		if base.Column == "" {
+			return "", 0, errors.New("в target нужна формула expr или колонка")
+		}
+		base.Expr, base.Column = `"`+base.Column+`"`, ""
+	}
+	scaled := base
+	scaled.Label = "Сценарий"
+	scaled.Scale = &analytics.Scale{Column: args.Column, Factor: 1 + change/100}
+
+	totals, sql, tables, err := r.scalars(ctx, args.Dataset, nil, base)
+	if err != nil {
+		return "", 0, err
+	}
+	affected, affectedSQL, _, err := r.scalars(ctx, args.Dataset, args.Filters, base, scaled)
+	if err != nil {
+		return "", 0, err
+	}
+	now := totals[0]
+	scenario := now - affected[0] + affected[1]
+
+	out := &domain.ResultSet{
+		Columns: []domain.ResultColumn{
+			{Name: "Вариант", Type: domain.ColumnTypeText},
+			{Name: base.Label, Type: domain.ColumnTypeNumeric},
+		},
+		Rows: [][]any{
+			{"Сейчас, всего", round2(now)},
+			{"Сценарий " + signedPct(change) + ", всего", round2(scenario)},
+		},
+		RowCount: 2,
+	}
+	warnings := []string{"Расчёт при неизменном объёме: реакция покупателей на изменение не учтена."}
+	title := orDefault(args.Title, "Пересчёт «"+base.Label+"» при изменении на "+signedPct(change))
+	res := r.register(title, sql+";\n"+affectedSQL, tables, out, warnings, analysisWhatIf,
+		&domain.ChartSpec{Type: domain.ChartTypeBar, X: "Вариант", Y: []string{base.Label}})
+
+	payload := r.resultOutput(res)
+	summary := map[string]any{
+		"total_now":      round2(now),
+		"total_scenario": round2(scenario),
+		"delta":          round2(scenario - now),
+		"affected_now":   round2(affected[0]),
+		"meaning":        "total — показатель по всем данным, affected — только по строкам из filters",
+		"assumption":     "объём не меняется",
+	}
+	if now != 0 {
+		summary["total_delta_pct"] = round2((scenario - now) / math.Abs(now) * 100)
+		summary["affected_share_pct"] = round2(affected[0] / math.Abs(now) * 100)
+	}
+	payload["summary"] = summary
+	return encodeOutput(payload), len(out.Rows), nil
+}
+
+func (r *agentRun) scalars(ctx context.Context, dataset string, filters []analytics.Filter, metrics ...analytics.Metric) ([]float64, string, []string, error) {
+	q := analytics.Query{Dataset: dataset, Metrics: metrics, Filters: filters}
+	compiled, err := analytics.Compile(q, r.catalog, r.s.cfg.MaxRows)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	scope, checked, err := sqlguard.ResolveScope(compiled.SQL, r.scopes, r.s.catalog.Schema(), r.s.cfg.MaxRows)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	rs, err := r.s.exec.Query(ctx, scope.Target, checked.SQL, 1, compiled.Args...)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if len(rs.Rows) == 0 {
+		return nil, "", nil, errors.New("нет строк для расчёта: проверь фильтры")
+	}
+	values := make([]float64, len(metrics))
+	for i := range metrics {
+		v, ok := toNumber(rs.Rows[0][i])
+		if !ok {
+			return nil, "", nil, errors.New("нет строк для расчёта: проверь фильтры")
+		}
+		values[i] = v
+	}
+	return values, compiled.SQL, checked.Tables, nil
 }
 
 func signedPct(v float64) string {

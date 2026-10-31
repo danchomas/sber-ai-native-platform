@@ -23,6 +23,22 @@ type Dashboard struct {
 	Period *DateRange `json:"period,omitempty"`
 }
 
+const (
+	TrashKindDashboard = "dashboard"
+	TrashKindWidget    = "widget"
+)
+
+type TrashItem struct {
+	Kind           string    `json:"kind"`
+	ID             uuid.UUID `json:"id"`
+	DashboardID    uuid.UUID `json:"dashboard_id"`
+	Title          string    `json:"title"`
+	DashboardTitle string    `json:"dashboard_title"`
+	Widgets        int       `json:"widgets"`
+	DeletedAt      time.Time `json:"deleted_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
+
 type DateRange struct {
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`

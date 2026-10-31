@@ -12,6 +12,26 @@ const resultSet = (columns, rows) => ({
 });
 
 describe("движок визуализаций", () => {
+  it("подписывает кварталы и месяцы по-русски, а не датой начала периода", () => {
+    const rs = resultSet(
+      [{ name: "Квартал", type: "date" }, { name: "Выручка", type: "double precision" }],
+      [["2026-07-01", 3], ["2024-10-01", 1], ["2025-01-01", 2]],
+    );
+    const text = render({ type: "bar", x: "Квартал", y: ["Выручка"] }, rs, { height: 260 }).textContent;
+    expect(text).toContain("4 кв. 2024");
+    expect(text).not.toContain("2024-10-01");
+
+    const table = tableView(resultSet([{ name: "Месяц", type: "date" }], [["2025-03-01"]]), 10);
+    expect(table.textContent).toContain("03.2025");
+  });
+
+  it("не падает на пустом результате без строк (rows: null)", () => {
+    const rs = { columns: [{ name: "Код", type: "text" }], rows: null, row_count: 0 };
+
+    expect(render({ type: "table" }, rs, { height: 260 }).textContent).toContain("ни одной строки");
+    expect(tableView(rs, 10).querySelector("table")).toBeTruthy();
+  });
+
   it("рисует столбцы по категории и метрике (тип bar)", () => {
     const rs = resultSet(
       [{ name: "Статус", type: "text" }, { name: "Количество", type: "bigint" }],

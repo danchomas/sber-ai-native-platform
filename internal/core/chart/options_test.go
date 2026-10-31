@@ -64,3 +64,19 @@ func TestOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeDropsIncomparableMetrics(t *testing.T) {
+	rs := &domain.ResultSet{
+		Columns: []domain.ResultColumn{
+			{Name: "Квартал", Type: domain.ColumnTypeText},
+			{Name: "Выручка", Type: domain.ColumnTypeNumeric},
+			{Name: "Себестоимость", Type: domain.ColumnTypeNumeric},
+			{Name: "Заказы", Type: domain.ColumnTypeInteger},
+		},
+		Rows: [][]any{{"1 кв. 2025", 300000000.0, 180000000.0, int64(28000)}, {"2 кв. 2025", 320000000.0, 190000000.0, int64(29000)}},
+	}
+	got := Normalize(&domain.ChartSpec{Type: domain.ChartTypeLine, X: "Квартал", Y: []string{"Выручка", "Себестоимость", "Заказы"}}, rs, "Динамика")
+	if len(got.Y) != 2 || got.Y[1] != "Себестоимость" {
+		t.Fatalf("на графике должны остаться показатели одного масштаба: %v", got.Y)
+	}
+}

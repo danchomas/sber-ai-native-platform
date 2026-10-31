@@ -349,7 +349,7 @@ func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget
 	}
 	defer rows.Close()
 
-	rs := &domain.ResultSet{Columns: resultColumns(rows.FieldDescriptions()), SQL: sql}
+	rs := &domain.ResultSet{Columns: resultColumns(rows.FieldDescriptions()), Rows: [][]any{}, SQL: sql}
 	for rows.Next() {
 		if len(rs.Rows) >= maxRows {
 			rs.Truncated = true

@@ -2,6 +2,7 @@ package chart
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -91,6 +92,32 @@ func Pick(rs *domain.ResultSet, title string) domain.ChartSpec {
 	return spec
 }
 
+const maxScaleRatio = 20
+
+func sameScale(names []string, rs *domain.ResultSet) []string {
+	if len(names) < 2 {
+		return names
+	}
+	peak := func(name string) float64 {
+		col, top := rs.ColumnIndex(name), 0.0
+		for _, row := range rs.Rows {
+			if v, ok := number(row[col]); ok {
+				top = max(top, math.Abs(v))
+			}
+		}
+		return top
+	}
+	base := peak(names[0])
+	kept := names[:1:1]
+	for _, name := range names[1:] {
+		p := peak(name)
+		if base == 0 || p == 0 || (p/base <= maxScaleRatio && base/p <= maxScaleRatio) {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
 func Normalize(spec *domain.ChartSpec, rs *domain.ResultSet, title string) domain.ChartSpec {
 	fallback := Pick(rs, title)
 	if spec == nil {
@@ -127,7 +154,7 @@ func Normalize(spec *domain.ChartSpec, rs *domain.ResultSet, title string) domai
 			y = append(y, name)
 		}
 	}
-	out.Y = y
+	out.Y = sameScale(y, rs)
 
 	if out.X == "" && out.Type != domain.ChartTypeHistogram {
 		out.X = fallback.X

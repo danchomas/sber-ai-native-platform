@@ -64,7 +64,7 @@ func trend(rs *domain.ResultSet, x, metric int, name string) *domain.Headline {
 	value, _ := number(rs.Rows[last][metric])
 	h := &domain.Headline{Label: "Последнее значение", Value: value}
 	if x >= 0 {
-		h.Label += " · " + period(rs.Rows[last][x])
+		h.Label += " · " + columnPeriod(rs, x, rs.Rows[last][x])
 	}
 	h.Text = fmt.Sprintf("%s: %s", name, Human(value))
 	if prev >= 0 {
@@ -99,7 +99,7 @@ func leader(rs *domain.ResultSet, cat, metric int, name string) *domain.Headline
 		return nil
 	}
 
-	label := period(rs.Rows[best][cat])
+	label := columnPeriod(rs, cat, rs.Rows[best][cat])
 	h := &domain.Headline{
 		Label: "Лидер · " + label,
 		Value: bestValue,
@@ -169,9 +169,26 @@ func period(v any) string {
 		}
 		return x.Format("02.01.2006")
 	case string:
+		if t, err := time.Parse(time.DateOnly, x); err == nil {
+			return period(t)
+		}
 		return x
 	}
 	return fmt.Sprint(v)
+}
+
+func columnPeriod(rs *domain.ResultSet, col int, v any) string {
+	if col >= 0 && rs.Columns[col].Name == "Квартал" {
+		if s, ok := v.(string); ok {
+			if t, err := time.Parse(time.DateOnly, s); err == nil {
+				return fmt.Sprintf("%d кв. %d", (int(t.Month())+2)/3, t.Year())
+			}
+		}
+		if t, ok := v.(time.Time); ok {
+			return fmt.Sprintf("%d кв. %d", (int(t.Month())+2)/3, t.Year())
+		}
+	}
+	return period(v)
 }
 
 func Human(v float64) string {

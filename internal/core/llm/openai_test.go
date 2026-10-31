@@ -98,3 +98,37 @@ func TestConverseRequiresTool(t *testing.T) {
 		t.Fatalf("отказ от tool_choice не должен выглядеть как отказ от инструментов: %v", err)
 	}
 }
+
+func TestOpenRouterSendsProviderOrder(t *testing.T) {
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(body))
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ок"}}]}`)
+	}))
+	defer srv.Close()
+
+	base := config.LLM{BaseURL: srv.URL, Model: "m", Timeout: 5 * time.Second, Providers: []string{"Near AI"}}
+	if _, err := NewOpenRouter(base).Converse(context.Background(), domain.Completion{}); err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if _, err := New(base).Converse(context.Background(), domain.Completion{}); err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if !strings.Contains(bodies[0], `"provider":{"order":["Near AI"]}`) {
+		t.Errorf("OpenRouter должен получить порядок провайдеров: %s", bodies[0])
+	}
+	if strings.Contains(bodies[1], `"provider"`) {
+		t.Errorf("обычный сервер не должен получать поле provider: %s", bodies[1])
+	}
+}
+
+func TestFallbackPlansOverviewAndWritesNoText(t *testing.T) {
+	plan, err := NewFallback().Complete(context.Background(), domain.Completion{JSONOnly: true})
+	if err != nil || !strings.Contains(plan, `"intent":"overview"`) {
+		t.Fatalf("план: %q, ошибка %v", plan, err)
+	}
+	if text, err := NewFallback().Complete(context.Background(), domain.Completion{}); err == nil {
+		t.Fatalf("текст ответа не должен приходить от заглушки: %q", text)
+	}
+}

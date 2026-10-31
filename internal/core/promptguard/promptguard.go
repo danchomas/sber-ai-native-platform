@@ -72,7 +72,8 @@ var destructiveRules = []*regexp.Regexp{
 	regexp.MustCompile(`\b(?:drop|truncate|alter)\s+(?:table|schema|database|role|user|index|view|column)\b`),
 	regexp.MustCompile(`\bdelete\s+from\b|\binsert\s+into\b|\bupdate\s+[\p{L}\p{N}_."]+\s+set\b|\bgrant\s+\w+|\brevoke\s+\w+`),
 	regexp.MustCompile(`\bcreate\s+(?:table|role|user|function|extension|trigger)\b|\bcopy\s+[\p{L}\p{N}_."]+\s+(?:from|to)\b`),
-	regexp.MustCompile(`pg_read_file|pg_ls_dir|pg_sleep|lo_import|lo_export|dblink|pg_terminate_backend`),
+	regexp.MustCompile(`pg_read_file|pg_ls_dir|pg_sleep|lo_import|lo_export|dblink|pg_terminate_backend|set_config|` +
+		`\bas\s*\(\s*(?:delete|update|insert)\b|\bdelete\b.{0,160}\breturning\b`),
 	regexp.MustCompile(
 		wb + `(?:удали|сотри|очисти|измени|обнови|перезапиши|вставь|допиши|переименуй)\s+` + gap +
 			`(?:таблиц\p{L}*|запис\p{L}*|строк\p{L}*|данн\p{L}*|базу|базе|колонк\p{L}*|столб\p{L}*|датасет\p{L}*|схем\p{L}*)`),

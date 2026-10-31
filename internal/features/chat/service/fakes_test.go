@@ -139,6 +139,7 @@ func (f fixedModel) Current(context.Context) domain.LLM { return f.model }
 
 type fakeExecutor struct {
 	result   *domain.ResultSet
+	results  []*domain.ResultSet
 	err      error
 	queries  []string
 	args     [][]any
@@ -155,6 +156,11 @@ func (e *fakeExecutor) Query(_ context.Context, _ domain.QueryTarget, sql string
 	}
 	if e.err != nil {
 		return nil, e.err
+	}
+	if len(e.results) > 0 {
+		next := e.results[0]
+		e.results = e.results[1:]
+		return next, nil
 	}
 	return e.result, nil
 }

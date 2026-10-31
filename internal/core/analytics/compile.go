@@ -35,14 +35,15 @@ type output struct {
 }
 
 type compiler struct {
-	cat    Catalog
-	tables []boundTable
-	args   []any
-	warns  []string
+	cat       Catalog
+	tables    []boundTable
+	args      []any
+	warns     []string
+	subtotals bool
 }
 
 func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
-	c := &compiler{cat: cat}
+	c := &compiler{cat: cat, subtotals: q.Subtotals && q.Time == nil && len(q.GroupBy) > 0}
 	if err := c.bind(q.Dataset, q.Join); err != nil {
 		return nil, err
 	}
@@ -72,11 +73,24 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 		})
 	}
 	dims := len(outs)
+	rawDims := make([]string, dims)
+	for i := range outs {
+		rawDims[i] = outs[i].expr
+	}
+	if c.subtotals {
+		for i := range outs {
+			name := SubtotalAll
+			if i == 0 {
+				name = SubtotalTotal
+			}
+			outs[i].expr = fmt.Sprintf("CASE WHEN GROUPING(%s) = 1 THEN '%s' ELSE %s::text END", rawDims[i], name, rawDims[i])
+		}
+	}
 
 	metrics := q.Metrics
 	if len(metrics) == 0 {
 		if dims == 0 {
-			return nil, invalid("укажите хотя бы одну метрику или разрез")
+			return nil, invalid("укажите хотя бы одну метрику или разрез: metrics с колонкой или формулой expr, group_by или time")
 		}
 		metrics = []Metric{{Func: FuncCount}}
 	}
@@ -105,7 +119,17 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 	c.writeFrom(&sb)
 	writeWhere(&sb, where)
 
-	if dims > 0 {
+	switch {
+	case c.subtotals:
+		sb.WriteString(" GROUP BY GROUPING SETS (")
+		for i := dims; i >= 0; i-- {
+			sb.WriteString("(" + strings.Join(rawDims[:i], ", ") + ")")
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+		}
+		sb.WriteString(")")
+	case dims > 0:
 		sb.WriteString(" GROUP BY ")
 		for i := range dims {
 			if i > 0 {
@@ -118,6 +142,13 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 	order, err := orderBy(q.Sort, outs, q.Time != nil)
 	if err != nil {
 		return nil, err
+	}
+	if c.subtotals {
+		parts := make([]string, 0, 2*dims)
+		for _, d := range rawDims {
+			parts = append(parts, "GROUPING("+d+")", d)
+		}
+		order = strings.Join(parts, ", ")
 	}
 	if order != "" && dims > 0 {
 		sb.WriteString(" ORDER BY ")
@@ -421,8 +452,29 @@ func (c *compiler) timeOutput(tg TimeGroup) (output, error) {
 }
 
 func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
+	out, err := c.baseMetric(m, grouped)
+	if err != nil || strings.TrimSpace(m.Per) == "" {
+		return out, err
+	}
+	fn := Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
+	if fn != FuncSum && fn != FuncCount && fn != FuncCountDistinct {
+		return output{}, invalid("per применяется только к sum, count и count_distinct")
+	}
+	bt, col, err := c.column(m.Per)
+	if err != nil {
+		return output{}, err
+	}
+	out.expr = "round((" + out.expr + ")::numeric / NULLIF(count(DISTINCT " + qualify(bt.alias, col.Name) + "), 0), 2)"
+	out.column = ""
+	return out, nil
+}
+
+func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 	fn := Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
 
+	if strings.TrimSpace(m.Expr) != "" {
+		return c.exprMetric(m, fn, grouped)
+	}
 	if fn == FuncCount && m.Column == "" {
 		return output{expr: "count(*)", label: orLabel(m.Label, "Количество")}, nil
 	}
@@ -430,14 +482,23 @@ func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
 		if !grouped {
 			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time")
 		}
+		if m.Column != "" {
+			bt, col, err := c.column(m.Column)
+			if err != nil {
+				return output{}, err
+			}
+			if col.Type.IsNumeric() {
+				return output{expr: c.shareOf(qualify(bt.alias, col.Name) + "::numeric"), label: orLabel(m.Label, "Доля «"+title(col)+"», %")}, nil
+			}
+		}
 		return output{
-			expr:  "round(100.0 * count(*) / NULLIF(sum(count(*)) OVER (), 0), 2)",
+			expr:  "round(100.0 * count(*) / NULLIF(" + c.windowTotal("count(*)") + " OVER (), 0), 2)",
 			label: orLabel(m.Label, "Доля, %"),
 		}, nil
 	}
 
 	if m.Column == "" {
-		return output{}, invalid("для метрики %s нужна колонка", fn)
+		return output{}, invalid("для метрики %s нужна колонка или формула expr", fn)
 	}
 	bt, col, err := c.column(m.Column)
 	if err != nil {
@@ -478,6 +539,42 @@ func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
 		return output{}, invalid("неизвестная функция %q, допустимы: %s", m.Func, joinEnum(Funcs))
 	}
 	return output{}, invalid("функцию %s нельзя применить к колонке «%s» типа %s", fn, name, col.Type)
+}
+
+func (c *compiler) exprMetric(m Metric, fn Func, grouped bool) (output, error) {
+	value, err := c.compileExpr(m.Expr, m.Scale)
+	if err != nil {
+		return output{}, err
+	}
+	name := orLabel(m.Label, "Показатель")
+	switch fn {
+	case FuncSum:
+		return output{expr: "round(sum(" + value + "), 2)", label: name}, nil
+	case FuncAvg:
+		return output{expr: "round(avg(" + value + "), 2)", label: name}, nil
+	case FuncMin, FuncMax:
+		return output{expr: "round(" + string(fn) + "(" + value + "), 2)", label: name}, nil
+	case FuncMedian:
+		return output{expr: "percentile_cont(0.5) WITHIN GROUP (ORDER BY " + value + ")", label: name}, nil
+	case FuncShare:
+		if !grouped {
+			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time")
+		}
+		return output{expr: c.shareOf(value), label: orLabel(m.Label, "Доля, %")}, nil
+	}
+	return output{}, invalid("к формуле применимы sum, avg, min, max, median и share, а не %q", m.Func)
+}
+
+func (c *compiler) shareOf(value string) string {
+	total := "sum(" + value + ")"
+	return "round(100.0 * " + total + " / NULLIF(" + c.windowTotal(total) + " OVER (), 0), 2)"
+}
+
+func (c *compiler) windowTotal(aggregate string) string {
+	if c.subtotals {
+		return "max(" + aggregate + ")"
+	}
+	return "sum(" + aggregate + ")"
 }
 
 func (c *compiler) where(filters []Filter) ([]string, error) {

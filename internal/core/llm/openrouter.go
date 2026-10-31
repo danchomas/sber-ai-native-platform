@@ -28,7 +28,7 @@ func NewOpenRouter(c config.LLM) *Client {
 	if c.BaseURL == "" {
 		c.BaseURL = OpenRouterBaseURL
 	}
-	return New(c).WithoutReasoning().WithHeaders(map[string]string{
+	return New(c).WithoutReasoning().WithProviders(c.Providers).WithHeaders(map[string]string{
 		headerReferer: appURL,
 		headerTitle:   appTitle,
 	})

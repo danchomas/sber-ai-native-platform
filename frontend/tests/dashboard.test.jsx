@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { PeriodBar } from "../src/features/dashboards/components/PeriodBar.jsx";
 import { Summary } from "../src/features/dashboards/components/Summary.jsx";
+import { TrashPanel, timeLeft } from "../src/features/dashboards/components/TrashPanel.jsx";
+import { UndoToast } from "../src/features/dashboards/components/UndoToast.jsx";
 import { Widget } from "../src/features/dashboards/components/Widget.jsx";
 import { PRESETS, presetRange } from "../src/features/dashboards/lib/period.js";
 import { AssistantMessage } from "../src/features/chat/components/Message.jsx";
@@ -90,8 +92,10 @@ describe("защита в ответе", () => {
     expect(html).toContain("Вопрос не передавался языковой модели.");
   });
 
-  it("виджет предлагает выгрузку в CSV, только когда она передана", () => {
-    expect(renderToString(<Widget widget={trend} theme="light" onExport={() => {}} />)).toContain("Выгрузить виджет «Выручка по месяцам» в CSV");
+  it("виджет предлагает скачать картинку и таблицу, только когда выгрузка передана", () => {
+    const html = renderToString(<Widget widget={trend} theme="light" onExportImage={() => {}} onExportTable={() => {}} />);
+    expect(html).toContain("Скачать виджет «Выручка по месяцам» картинкой");
+    expect(html).toContain("Скачать таблицу виджета «Выручка по месяцам»: выбрать формат");
     expect(renderToString(<Widget widget={trend} theme="light" />)).not.toContain("widget-export");
   });
 
@@ -100,5 +104,24 @@ describe("защита в ответе", () => {
     expect(filenameFrom(cd)).toBe("Продажи — квартал.xlsx");
     expect(filenameFrom('attachment; filename="dashboard.csv"')).toBe("dashboard.csv");
     expect(filenameFrom(null)).toBeNull();
+  });
+
+  it("корзина показывает, что и сколько ещё можно вернуть", () => {
+    const expires = new Date(Date.now() + 5 * 3600000 - 60000).toISOString();
+    const html = renderToString(<TrashPanel onRestore={() => {}} items={[
+      { kind: "dashboard", id: "d1", dashboard_id: "d1", title: "Продажи", widgets: 4, expires_at: expires },
+      { kind: "widget", id: "w1", dashboard_id: "d2", title: "Выручка", dashboard_title: "Итоги", expires_at: expires },
+    ]} />);
+    expect(html).toContain("дашборд, 4 виджета");
+    expect(html).toContain("виджет дашборда «Итоги»");
+    expect(html).toContain("вернуть можно ещё 5 часов");
+    expect(renderToString(<TrashPanel items={[]} onRestore={() => {}} />)).toContain("Корзина пуста");
+    expect(timeLeft(new Date(Date.now() + 60000).toISOString())).toBe("меньше часа");
+  });
+
+  it("плашка предлагает вернуть удалённое", () => {
+    const html = renderToString(<UndoToast item={{ kind: "widget", title: "Выручка" }} onRestore={() => {}} onClose={() => {}} />);
+    expect(html).toContain("Виджет «Выручка» удалён");
+    expect(html).toContain("Вернуть");
   });
 });

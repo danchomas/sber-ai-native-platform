@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/heinousness/aibi/internal/core/analytics"
 	"github.com/heinousness/aibi/internal/core/domain"
@@ -39,11 +40,7 @@ func seriesSchema(extra schema, required ...string) schema {
 			"column": text("колонка с датой"),
 			"grain":  enum([]analytics.Grain{analytics.GrainDay, analytics.GrainWeek, analytics.GrainMonth, analytics.GrainQuarter, analytics.GrainYear}, "шаг ряда"),
 		}, "column", "grain"),
-		"metric": object(schema{
-			"fn":     enum(analytics.Funcs, "что считать за период"),
-			"column": text("колонка датасета"),
-			"label":  text("подпись по-русски"),
-		}, "fn"),
+		"metric":  metricSchema("что считать за период"),
 		"filters": filtersSchema(),
 		"title":   text("заголовок результата"),
 	}
@@ -65,15 +62,15 @@ func insightTools() []struct {
 			toolSeasonality,
 			"Сезонность: насколько каждый месяц, квартал или день недели выше или ниже среднего. " +
 				"Для вопросов «что происходит каждый июль», «есть ли пики зимой», «какой паттерн повторяется каждые 12 месяцев».",
-			seriesSchema(nil),
+			seriesSchema(nil, "metric"),
 		},
 		{
 			toolCorrelate,
 			"Корреляция двух показателей по времени с лагом: «изменения X предшествуют росту Y на N периодов?». " +
 				"Корреляция не доказывает причинность — скажи об этом пользователю.",
 			seriesSchema(schema{
-				"x":       object(schema{"fn": enum(analytics.Funcs, ""), "column": text("колонка"), "label": text("подпись")}, "fn"),
-				"y":       object(schema{"fn": enum(analytics.Funcs, ""), "column": text("колонка"), "label": text("подпись")}, "fn"),
+				"x":       metricSchema("что считать за период"),
+				"y":       metricSchema("что считать за период"),
 				"max_lag": schema{"type": "integer", "description": "наибольший сдвиг в периодах, до 24"},
 			}, "x", "y"),
 		},
@@ -81,12 +78,12 @@ func insightTools() []struct {
 			toolForecast,
 			"Прогноз показателя на будущие периоды по истории: тренд и сезонность с интервалом. " +
 				"Для вопросов «какой рост ожидается в ближайшие кварталы». Для сценария «что если изменить X» есть what_if.",
-			seriesSchema(schema{"horizon": schema{"type": "integer", "description": "на сколько периодов вперёд, до 36"}}),
+			seriesSchema(schema{"horizon": schema{"type": "integer", "description": "на сколько периодов вперёд, до 36"}}, "metric"),
 		},
 		{
 			toolAnomalies,
 			"Выбросы во временном ряду: периоды, где показатель резко выше или ниже обычного.",
-			seriesSchema(nil),
+			seriesSchema(nil, "metric"),
 		},
 	}
 }
@@ -288,6 +285,10 @@ func (r *agentRun) forecast(ctx context.Context, a seriesArgs, horizon int) (str
 	if err != nil {
 		return "", 0, err
 	}
+	var cut bool
+	if last, ok := r.lastDate(a.Dataset, a.Time.Column); ok {
+		points, cut = analytics.CompletePeriods(points, a.Time.Grain, last)
+	}
 	forecast, summary, err := analytics.Forecast(points, a.Time.Grain, horizon)
 	if err != nil {
 		return "", 0, err
@@ -308,6 +309,9 @@ func (r *agentRun) forecast(ctx context.Context, a seriesArgs, horizon int) (str
 
 	warnings := []string{fmt.Sprintf("Прогноз построен моделью «%s» по %d периодам истории и предполагает, что условия не изменятся.",
 		summary.Method, len(points))}
+	if cut {
+		warnings = append(warnings, "Последний период в данных неполный, поэтому в расчёт не вошёл.")
+	}
 	res := r.register(orDefault(a.Title, "Прогноз"), sql, tables, out, warnings, analysisForecast,
 		&domain.ChartSpec{Type: domain.ChartTypeLine, X: period, Y: []string{"Факт", "Прогноз", "Нижняя граница", "Верхняя граница"}})
 
@@ -325,6 +329,19 @@ func (r *agentRun) forecast(ctx context.Context, a seriesArgs, horizon int) (str
 		"history_rows_shown": "строки с прогнозом — в конце результата",
 	}
 	return encodeOutput(payload), len(out.Rows), nil
+}
+
+func (r *agentRun) lastDate(dataset, column string) (time.Time, bool) {
+	c, ok := r.findColumn(dataset, column)
+	if !ok || c.Profile == nil || c.Profile.MaxValue == nil {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05-07", time.DateOnly, time.RFC3339} {
+		if t, err := time.Parse(layout, *c.Profile.MaxValue); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func (r *agentRun) anomalies(ctx context.Context, a seriesArgs) (string, int, error) {

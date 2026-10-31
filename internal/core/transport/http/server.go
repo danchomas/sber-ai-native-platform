@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/heinousness/aibi/internal/core/config"
@@ -17,13 +18,24 @@ type Server struct {
 	log             *slog.Logger
 }
 
-func NewServer(cfg config.HTTP, h http.Handler, log *slog.Logger) *Server {
-	handler := http.TimeoutHandler(h, cfg.RequestTimeout, `{"error":{"code":"timeout","message":"Превышено время обработки запроса"}}`)
+func withTimeout(h http.Handler, timeout time.Duration) http.Handler {
+	limited := http.TimeoutHandler(h, timeout, `{"error":{"code":"timeout","message":"Превышено время обработки запроса"}}`)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+			limited.ServeHTTP(w, r)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 
+func NewServer(cfg config.HTTP, h http.Handler, log *slog.Logger) *Server {
 	return &Server{
 		server: &http.Server{
 			Addr:              cfg.Addr,
-			Handler:           handler,
+			Handler:           withTimeout(h, cfg.RequestTimeout),
 			ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout:       cfg.ReadTimeout,
 			WriteTimeout:      cfg.WriteTimeout,

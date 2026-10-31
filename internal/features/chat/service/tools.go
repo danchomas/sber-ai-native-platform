@@ -65,6 +65,17 @@ func chartSchema() schema {
 	}, "type")
 }
 
+func metricSchema(fnDesc string) schema {
+	return object(schema{
+		"fn":     enum(analytics.Funcs, fnDesc),
+		"column": text("колонка датасета; для count можно не указывать"),
+		"expr": text("формула вместо column, если показателя нет отдельной колонкой: числовые колонки, числа, + - * / и скобки, " +
+			"например количество * цена * (1 - скидка / 100)"),
+		"per":   text("колонка-знаменатель: показатель на одно её уникальное значение, например сумма на один заказ"),
+		"label": text("подпись показателя по-русски"),
+	}, "fn")
+}
+
 func filtersSchema() schema {
 	return list(object(schema{
 		"column": text("колонка датасета"),
@@ -150,12 +161,8 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 			"Посчитать показатели: метрики в разрезах, по времени, с фильтрами. Платформа сама собирает и проверяет запрос. " +
 				"Возвращает result_id и строки результата.",
 			object(schema{
-				"dataset": text("имя датасета из списка"),
-				"metrics": list(object(schema{
-					"fn":     enum(analytics.Funcs, "share — доля строк группы в процентах"),
-					"column": text("колонка датасета; для count можно не указывать"),
-					"label":  text("подпись показателя по-русски"),
-				}, "fn"), "что посчитать; без метрик считается количество строк"),
+				"dataset":  text("имя датасета из списка"),
+				"metrics":  list(metricSchema("share — доля в процентах: с expr или числовой column доля суммы, иначе доля строк группы"), "что посчитать; без метрик считается количество строк"),
 				"group_by": list(schema{"type": "string"}, "колонки-разрезы, не больше 3"),
 				"time": object(schema{
 					"column": text("колонка с датой"),
@@ -166,7 +173,7 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 				"sort":    sortSchema(),
 				"limit":   schema{"type": "integer", "description": "сколько строк вернуть"},
 				"title":   text("короткий заголовок результата по-русски"),
-			}, "dataset"),
+			}, "dataset", "metrics"),
 		},
 		{
 			toolRows,

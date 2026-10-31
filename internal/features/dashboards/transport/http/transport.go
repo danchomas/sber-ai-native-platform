@@ -63,6 +63,46 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, r, http.StatusNoContent, nil)
 }
 
+func (h *Handler) Trash(w http.ResponseWriter, r *http.Request) {
+	items, err := h.dashboards.Trash(r.Context())
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
+	id, err := request.UUID(r, "id")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if err := h.dashboards.RestoreDashboard(r.Context(), id); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusNoContent, nil)
+}
+
+func (h *Handler) RestoreWidget(w http.ResponseWriter, r *http.Request) {
+	id, err := request.UUID(r, "id")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	widgetID, err := request.UUID(r, "widget")
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if err := h.dashboards.RestoreWidget(r.Context(), id, widgetID); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, r, http.StatusNoContent, nil)
+}
+
 type widgetRequest struct {
 	Title    string           `json:"title"`
 	Question string           `json:"question"`
@@ -168,17 +208,23 @@ type Dashboards interface {
 	Rename(ctx context.Context, id uuid.UUID, title string) error
 	AddWidget(ctx context.Context, dashboardID uuid.UUID, w domain.Widget) (*domain.Widget, error)
 	RemoveWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
+	Trash(ctx context.Context) ([]domain.TrashItem, error)
+	RestoreDashboard(ctx context.Context, id uuid.UUID) error
+	RestoreWidget(ctx context.Context, dashboardID, widgetID uuid.UUID) error
 }
 
 func (h *Handler) Register(r chi.Router) {
 	r.Route("/dashboards", func(d chi.Router) {
 		d.Get("/", h.List)
 		d.Post("/", h.Create)
+		d.Get("/trash", h.Trash)
 		d.Get("/{id}", h.Get)
 		d.Get("/{id}/export", h.Export)
 		d.Patch("/{id}", h.Rename)
 		d.Delete("/{id}", h.Delete)
 		d.Post("/{id}/widgets", h.AddWidget)
 		d.Delete("/{id}/widgets/{widget}", h.RemoveWidget)
+		d.Post("/{id}/restore", h.Restore)
+		d.Post("/{id}/widgets/{widget}/restore", h.RestoreWidget)
 	})
 }

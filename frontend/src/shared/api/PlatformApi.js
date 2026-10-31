@@ -109,6 +109,18 @@ export class PlatformApi {
     return this.http.del(`/dashboards/${id}`);
   }
 
+  dashboardTrash() {
+    return this.http.get("/dashboards/trash").then((r) => r?.items ?? []);
+  }
+
+  restoreDashboard(id) {
+    return this.http.post(`/dashboards/${id}/restore`);
+  }
+
+  restoreWidget(dashboardId, widgetId) {
+    return this.http.post(`/dashboards/${dashboardId}/widgets/${widgetId}/restore`);
+  }
+
   createDashboard(title, widgets, description = "") {
     return this.http.post("/dashboards", { title, description, widgets });
   }
