@@ -34,6 +34,3 @@ coverage.out
 # Тестовые наборы данных: 1.4 ГБ, предел GitHub — 100 МБ на файл.
 # Как получить и загрузить — см. scripts/load-datasets.sh
 /datasets/
-
-# Прогон вопросов: пока не публикуется
-/TestCases.md
