@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "../../../shared/api/PlatformApi.js";
+import { saveBlob } from "../../../shared/lib/save.js";
 
 export function useDashboards({ openId, onCount } = {}) {
   const [items, setItems] = useState([]);
@@ -80,5 +81,26 @@ export function useDashboards({ openId, onCount } = {}) {
     [reload],
   );
 
-  return { items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename };
+  const [exporting, setExporting] = useState(null);
+
+  const exportFile = useCallback(
+    async (format, widgetId = null) => {
+      if (!current) return;
+      setExporting(widgetId ? `${format}:${widgetId}` : format);
+      try {
+        const { blob, filename } = await api.exportDashboard(current.id, { format, period, widgetId });
+        saveBlob(blob, filename || `dashboard.${format}`);
+        setError(null);
+      } catch (err) {
+        setError(err);
+      } finally {
+        setExporting(null);
+      }
+    },
+    [current, period],
+  );
+
+  return {
+    items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename, exporting, exportFile,
+  };
 }

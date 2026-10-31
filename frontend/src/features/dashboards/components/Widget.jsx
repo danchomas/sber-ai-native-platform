@@ -2,7 +2,7 @@ import { Chart } from "../../../shared/charts/Chart.jsx";
 import { Headline } from "../../../shared/ui/Headline.jsx";
 import { Icon } from "../../../shared/ui/Icon.jsx";
 
-export function Widget({ widget, theme, filtered, onRemove }) {
+export function Widget({ widget, theme, filtered, onRemove, onExport, exporting }) {
   const span = Math.min(Math.max(widget.width || 6, 1), 12);
   const spec = widget.chart ? { ...widget.chart, title: "" } : { type: "table" };
   const showHeadline = widget.headline && widget.chart?.type !== "kpi";
@@ -16,15 +16,30 @@ export function Widget({ widget, theme, filtered, onRemove }) {
             за весь период
           </span>
         ) : null}
-        {onRemove ? (
-          <button
-            className="icon-btn icon-only widget-remove"
-            onClick={onRemove}
-            title="Убрать с дашборда"
-            aria-label={`Убрать виджет «${widget.title}»`}
-          >
-            <Icon name="close" size={13} />
-          </button>
+        {onExport || onRemove ? (
+          <div className="widget-tools">
+            {onExport ? (
+              <button
+                className="icon-btn icon-only widget-export"
+                onClick={onExport}
+                disabled={exporting}
+                title="Выгрузить данные виджета в CSV"
+                aria-label={`Выгрузить виджет «${widget.title}» в CSV`}
+              >
+                <Icon name="download" size={13} />
+              </button>
+            ) : null}
+            {onRemove ? (
+              <button
+                className="icon-btn icon-only widget-remove"
+                onClick={onRemove}
+                title="Убрать с дашборда"
+                aria-label={`Убрать виджет «${widget.title}»`}
+              >
+                <Icon name="close" size={13} />
+              </button>
+            ) : null}
+          </div>
         ) : null}
       </header>
 

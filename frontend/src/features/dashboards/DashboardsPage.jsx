@@ -13,8 +13,9 @@ import { Spinner } from "../../shared/ui/Spinner.jsx";
 import "./styles.css";
 
 export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
-  const { items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename } =
-    useDashboards({ openId, onCount });
+  const {
+    items, current, error, loading, period, setPeriod, reload, refresh, remove, removeWidget, rename, exporting, exportFile,
+  } = useDashboards({ openId, onCount });
   const widgets = current?.widgets || [];
 
   return (
@@ -72,6 +73,22 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                   <button className="icon-btn" onClick={refresh} disabled={loading}>
                     <Icon name="refresh" size={14} /> Обновить
                   </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => exportFile("xlsx")}
+                    disabled={loading || !!exporting}
+                    title="Выгрузить в Excel: сводка и лист с данными каждого виджета"
+                  >
+                    <Icon name="download" size={14} /> {exporting === "xlsx" ? "Выгружаю…" : "Excel"}
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => exportFile("csv")}
+                    disabled={loading || !!exporting}
+                    title="Выгрузить данные всех виджетов в CSV"
+                  >
+                    <Icon name="download" size={14} /> {exporting === "csv" ? "Выгружаю…" : "CSV"}
+                  </button>
                   <button className="icon-btn" onClick={() => window.print()} title="Напечатать или сохранить в PDF">
                     <Icon name="print" size={14} /> PDF
                   </button>
@@ -102,6 +119,8 @@ export function DashboardsPage({ active, theme, openId, onOpen, onCount }) {
                       widget={w}
                       theme={theme}
                       filtered={!!current.period}
+                      exporting={exporting === `csv:${w.id}`}
+                      onExport={w.id && !w.error ? () => exportFile("csv", w.id) : undefined}
                       onRemove={async () => {
                         if (!window.confirm(`Убрать виджет «${w.title}» с дашборда?`)) return;
                         await removeWidget(current.id, w.id);

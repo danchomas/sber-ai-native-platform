@@ -175,6 +175,7 @@ func (h *Handler) Register(r chi.Router) {
 		d.Get("/", h.List)
 		d.Post("/", h.Create)
 		d.Get("/{id}", h.Get)
+		d.Get("/{id}/export", h.Export)
 		d.Patch("/{id}", h.Rename)
 		d.Delete("/{id}", h.Delete)
 		d.Post("/{id}/widgets", h.AddWidget)

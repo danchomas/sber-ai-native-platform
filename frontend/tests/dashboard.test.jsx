@@ -6,6 +6,7 @@ import { Summary } from "../src/features/dashboards/components/Summary.jsx";
 import { Widget } from "../src/features/dashboards/components/Widget.jsx";
 import { PRESETS, presetRange } from "../src/features/dashboards/lib/period.js";
 import { AssistantMessage } from "../src/features/chat/components/Message.jsx";
+import { filenameFrom } from "../src/shared/api/HttpClient.js";
 
 const trend = {
   id: "w1",
@@ -87,5 +88,17 @@ describe("защита в ответе", () => {
     );
     expect(html).toContain("notice security");
     expect(html).toContain("Вопрос не передавался языковой модели.");
+  });
+
+  it("виджет предлагает выгрузку в CSV, только когда она передана", () => {
+    expect(renderToString(<Widget widget={trend} theme="light" onExport={() => {}} />)).toContain("Выгрузить виджет «Выручка по месяцам» в CSV");
+    expect(renderToString(<Widget widget={trend} theme="light" />)).not.toContain("widget-export");
+  });
+
+  it("имя файла выгрузки читается из Content-Disposition", () => {
+    const cd = `attachment; filename="dashboard.xlsx"; filename*=UTF-8''${encodeURIComponent("Продажи — квартал.xlsx")}`;
+    expect(filenameFrom(cd)).toBe("Продажи — квартал.xlsx");
+    expect(filenameFrom('attachment; filename="dashboard.csv"')).toBe("dashboard.csv");
+    expect(filenameFrom(null)).toBeNull();
   });
 });

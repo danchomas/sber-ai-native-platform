@@ -79,6 +79,20 @@ export class HttpClient {
     return result;
   }
 
+  async download(path, { signal } = {}) {
+    const resp = await fetch(this.baseUrl + path, { signal });
+    if (!resp.ok) {
+      let e = null;
+      try {
+        e = JSON.parse(await resp.text())?.error;
+      } catch {
+        e = null;
+      }
+      throw new ApiError(e?.message || `Не удалось выгрузить файл (${resp.status}).`, e?.code, e?.field);
+    }
+    return { blob: await resp.blob(), filename: filenameFrom(resp.headers.get("Content-Disposition")) };
+  }
+
   get(path, opts) { return this.request("GET", path, opts); }
   post(path, body, opts) { return this.request("POST", path, { ...opts, body }); }
   patch(path, body, opts) { return this.request("PATCH", path, { ...opts, body }); }
@@ -101,4 +115,18 @@ function parseEvent(block) {
   }
 }
 
-export { parseEvent };
+function filenameFrom(disposition) {
+  if (!disposition) return null;
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1].trim());
+    } catch {
+      return null;
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  return plain ? plain[1] : null;
+}
+
+export { parseEvent, filenameFrom };

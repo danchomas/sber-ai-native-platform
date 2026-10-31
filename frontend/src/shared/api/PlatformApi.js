@@ -97,6 +97,14 @@ export class PlatformApi {
     return this.http.get(`/dashboards/${id}?${params}`);
   }
 
+  exportDashboard(id, { format = "xlsx", period = null, widgetId = null } = {}) {
+    const params = new URLSearchParams({ format });
+    if (period?.from) params.set("from", period.from);
+    if (period?.to) params.set("to", period.to);
+    if (widgetId) params.set("widget", widgetId);
+    return this.http.download(`/dashboards/${id}/export?${params}`);
+  }
+
   deleteDashboard(id) {
     return this.http.del(`/dashboards/${id}`);
   }
