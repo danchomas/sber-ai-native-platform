@@ -11,14 +11,15 @@ import (
 )
 
 type plan struct {
-	Intent    string           `json:"intent"`
-	SQL       string           `json:"sql"`
-	Query     *analytics.Query `json:"query"`
-	Chart     *chartJSON       `json:"chart"`
-	Title     string           `json:"title"`
-	Message   string           `json:"message"`
-	Followups stringList       `json:"followups"`
-	Widgets   []widgetJSON     `json:"widgets"`
+	Intent     string                           `json:"intent"`
+	SQL        string                           `json:"sql"`
+	Query      *analytics.Query                 `json:"query"`
+	Comparison *analytics.PeriodComparisonQuery `json:"comparison"`
+	Chart      *chartJSON                       `json:"chart"`
+	Title      string                           `json:"title"`
+	Message    string                           `json:"message"`
+	Followups  stringList                       `json:"followups"`
+	Widgets    []widgetJSON                     `json:"widgets"`
 }
 
 type chartJSON struct {
@@ -87,6 +88,9 @@ func parsePlan(raw string) (*plan, error) {
 	if err := json.Unmarshal([]byte(payload), &p); err != nil {
 		return nil, fmt.Errorf("разбор плана: %w", err)
 	}
+	if p.Comparison != nil && (p.Query != nil || strings.TrimSpace(p.SQL) != "") {
+		return nil, fmt.Errorf("план должен содержать либо comparison, либо query/SQL, но не оба варианта")
+	}
 	p.SQL = cleanSQL(p.SQL)
 	for i := range p.Widgets {
 		p.Widgets[i].SQL = cleanSQL(p.Widgets[i].SQL)
@@ -129,7 +133,7 @@ func (p *plan) intent() domain.AnswerIntent {
 	}
 }
 
-func (p *plan) hasQuery() bool { return p.SQL != "" || p.Query != nil }
+func (p *plan) hasQuery() bool { return p.SQL != "" || p.Query != nil || p.Comparison != nil }
 
 func (c *chartJSON) chartSpec() *domain.ChartSpec {
 	if c == nil {

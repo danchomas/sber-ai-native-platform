@@ -97,7 +97,7 @@ func (r *agentRun) compareSegments(ctx context.Context, raw []byte) (string, int
 	if len(args.Metrics) > 0 {
 		for _, m := range args.Metrics {
 			fn := analytics.Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
-			if (fn == analytics.FuncCount || fn == analytics.FuncShare) && m.Column == "" && m.Expr == "" && m.Per == "" {
+			if (fn == analytics.FuncCount || fn == analytics.FuncShare) && m.Column == "" && m.Expr == "" && m.Per == "" && m.Duration == nil {
 				continue
 			}
 			metrics = append(metrics, m)

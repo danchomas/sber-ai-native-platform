@@ -71,9 +71,18 @@ func metricSchema(fnDesc string) schema {
 		"column": text("колонка датасета; для count можно не указывать"),
 		"expr": text("формула вместо column, если показателя нет отдельной колонкой: числовые колонки, числа, + - * / и скобки, " +
 			"например количество * цена * (1 - скидка / 100)"),
-		"per":   text("колонка-знаменатель: показатель на одно её уникальное значение, например сумма на один заказ"),
-		"label": text("подпись показателя по-русски"),
+		"duration": durationSchema(),
+		"per":      text("колонка-знаменатель: показатель на одно её уникальное значение, например сумма на один заказ"),
+		"label":    text("подпись показателя по-русски"),
 	}, "fn")
+}
+
+func durationSchema() schema {
+	return object(schema{
+		"start": text("колонка даты начала интервала: например создание для ожидания, начало работы для выполнения"),
+		"end":   text("колонка даты конца: начало работы для ожидания, завершение для выполнения"),
+		"unit":  enum(analytics.DurationUnits, "календарные минуты, часы или дни; не рабочие часы и не трудозатраты"),
+	}, "start", "end", "unit")
 }
 
 func filtersSchema() schema {
@@ -254,6 +263,7 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 	}
 	tools = append(tools, insightTools()...)
 	tools = append(tools, segmentTools()...)
+	tools = append(tools, periodTools()...)
 	if allowSQL {
 		tools = append(tools, struct {
 			name, desc string

@@ -27,12 +27,13 @@ const (
 )
 
 type Metric struct {
-	Func   Func   `json:"fn"`
-	Column string `json:"column,omitempty"`
-	Expr   string `json:"expr,omitempty"`
-	Per    string `json:"per,omitempty"`
-	Label  string `json:"label,omitempty"`
-	Scale  *Scale `json:"-"`
+	Func     Func      `json:"fn"`
+	Column   string    `json:"column,omitempty"`
+	Expr     string    `json:"expr,omitempty"`
+	Duration *Duration `json:"duration,omitempty"`
+	Per      string    `json:"per,omitempty"`
+	Label    string    `json:"label,omitempty"`
+	Scale    *Scale    `json:"-"`
 }
 
 type Scale struct {
@@ -67,10 +68,11 @@ const (
 	FuncMin           Func = "min"
 	FuncMax           Func = "max"
 	FuncMedian        Func = "median"
+	FuncP90           Func = "p90"
 	FuncShare         Func = "share"
 )
 
-var Funcs = []Func{FuncCount, FuncCountDistinct, FuncSum, FuncAvg, FuncMin, FuncMax, FuncMedian, FuncShare}
+var Funcs = []Func{FuncCount, FuncCountDistinct, FuncSum, FuncAvg, FuncMin, FuncMax, FuncMedian, FuncP90, FuncShare}
 
 type Grain string
 

@@ -37,17 +37,18 @@ const (
 )
 
 type agentResult struct {
-	id       string
-	title    string
-	query    *analytics.Query
-	sql      string
-	result   *domain.ResultSet
-	tables   []string
-	warnings []string
-	analysis string
-	chart    *domain.ChartSpec
-	records  bool
-	segments bool
+	id         string
+	title      string
+	query      *analytics.Query
+	sql        string
+	result     *domain.ResultSet
+	tables     []string
+	warnings   []string
+	analysis   string
+	chart      *domain.ChartSpec
+	records    bool
+	segments   bool
+	comparison *analytics.PeriodComparisonQuery
 }
 
 type agentFinal struct {
@@ -396,6 +397,8 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
 		}
 		return r.recalculate(ctx, call.Arguments)
+	case toolComparePeriods:
+		return r.comparePeriods(ctx, call.Arguments)
 	case toolDashboards:
 		return r.listDashboards(ctx)
 	case toolAddWidgets:
@@ -771,6 +774,9 @@ func (r *agentRun) finish(content string) *domain.Answer {
 		if res.query != nil {
 			answer.Query, _ = json.Marshal(res.query)
 		}
+		if res.comparison != nil {
+			answer.Query, _ = json.Marshal(map[string]any{"comparison": res.comparison})
+		}
 		answer.Text = orDefault(f.text, fallbackResultText(res.result))
 		return answer
 	}
@@ -886,6 +892,8 @@ func stepTitle(tool string) string {
 		return "Оценил сценарий «что если»"
 	case toolRecalc:
 		return "Пересчитал показатель по сценарию"
+	case toolComparePeriods:
+		return "Сравнил периоды и проверил полноту наблюдений"
 	}
 	return "Неизвестный инструмент «" + tool + "»"
 }

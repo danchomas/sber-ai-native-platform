@@ -241,6 +241,9 @@ func (s *Service) respond(ctx context.Context, in agentInput) *domain.Answer {
 		return s.overviewAnswer(ctx, in.filter, datasets, relations, question)
 
 	case domain.IntentQuery:
+		if plan.Comparison != nil {
+			return s.comparisonAnswer(ctx, in, plan.Comparison)
+		}
 		return s.queryAnswer(ctx, in.filter, schemaContext, datasets, relations, question, plan)
 
 	case domain.IntentDashboard:
@@ -641,7 +644,7 @@ func (s *Service) narrate(
 	digest := formatResultForModel(f, rs, resultRowsForModel)
 
 	text, err := s.completeRussian(ctx, domain.Completion{
-		System: narratorSystemPrompt,
+		System: narratorSystemPrompt + comparisonNarrationNote,
 		Messages: []domain.ChatMessage{{
 			Role:    domain.RoleUser,
 			Content: buildNarrationPrompt(question, title, digest, warnings),

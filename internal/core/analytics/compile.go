@@ -472,6 +472,16 @@ func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
 func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 	fn := Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
 
+	if m.Duration != nil {
+		if m.Column != "" || m.Expr != "" || m.Per != "" || m.Scale != nil {
+			return output{}, invalid("duration нельзя совмещать с column, expr, per или scale")
+		}
+		value, err := c.durationExpr(*m.Duration)
+		if err != nil {
+			return output{}, err
+		}
+		return c.valueMetric(m, fn, grouped, value)
+	}
 	if strings.TrimSpace(m.Expr) != "" {
 		return c.exprMetric(m, fn, grouped)
 	}
@@ -523,11 +533,15 @@ func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 		if col.Type.IsNumeric() {
 			return output{expr: "sum(" + ref + ")", label: orLabel(m.Label, "Сумма «"+name+"»"), column: col.Name}, nil
 		}
-	case FuncMedian:
+	case FuncMedian, FuncP90:
 		if col.Type.IsNumeric() {
+			percentile, word := "0.5", "Медиана"
+			if fn == FuncP90 {
+				percentile, word = "0.9", "P90"
+			}
 			return output{
-				expr:  "percentile_cont(0.5) WITHIN GROUP (ORDER BY " + ref + ")",
-				label: orLabel(m.Label, "Медиана «"+name+"»"), column: col.Name,
+				expr:  "percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + ref + ")",
+				label: orLabel(m.Label, word+" «"+name+"»"), column: col.Name,
 			}, nil
 		}
 	case FuncMin, FuncMax:
@@ -546,23 +560,35 @@ func (c *compiler) exprMetric(m Metric, fn Func, grouped bool) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
+	return c.valueMetric(m, fn, grouped, value)
+}
+
+func (c *compiler) valueMetric(m Metric, fn Func, grouped bool, value string) (output, error) {
 	name := orLabel(m.Label, "Показатель")
 	switch fn {
+	case FuncCount:
+		if m.Duration != nil {
+			return output{expr: "count(" + value + ")", label: orLabel(m.Label, "Корректных интервалов")}, nil
+		}
 	case FuncSum:
 		return output{expr: "round(sum(" + value + "), 2)", label: name}, nil
 	case FuncAvg:
 		return output{expr: "round(avg(" + value + "), 2)", label: name}, nil
 	case FuncMin, FuncMax:
 		return output{expr: "round(" + string(fn) + "(" + value + "), 2)", label: name}, nil
-	case FuncMedian:
-		return output{expr: "percentile_cont(0.5) WITHIN GROUP (ORDER BY " + value + ")", label: name}, nil
+	case FuncMedian, FuncP90:
+		percentile := "0.5"
+		if fn == FuncP90 {
+			percentile = "0.9"
+		}
+		return output{expr: "percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + value + ")", label: name}, nil
 	case FuncShare:
 		if !grouped {
 			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time")
 		}
 		return output{expr: c.shareOf(value), label: orLabel(m.Label, "Доля, %")}, nil
 	}
-	return output{}, invalid("к формуле применимы sum, avg, min, max, median и share, а не %q", m.Func)
+	return output{}, invalid("к формуле применимы sum, avg, min, max, median, p90, share и count для duration, а не %q", m.Func)
 }
 
 func (c *compiler) shareOf(value string) string {

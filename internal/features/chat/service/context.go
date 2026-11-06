@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -230,7 +232,12 @@ func formatHistory(f *dataFilter, turns []domain.Turn) []domain.ChatMessage {
 		}
 		switch {
 		case len(t.Query) > 0:
-			fmt.Fprintf(&sb, "\n[параметры запроса: %s]", compactSQL(string(t.Query)))
+			var compact bytes.Buffer
+			if json.Compact(&compact, t.Query) == nil {
+				fmt.Fprintf(&sb, "\n[параметры запроса: %s]", f.clean(compact.String(), maxArgsBytes))
+			} else {
+				fmt.Fprintf(&sb, "\n[параметры запроса: %s]", f.clean(string(t.Query), maxArgsBytes))
+			}
 		case t.SQL != "":
 			fmt.Fprintf(&sb, "\n[выполненный SQL: %s]", compactSQL(t.SQL))
 		}
