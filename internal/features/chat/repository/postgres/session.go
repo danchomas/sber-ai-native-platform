@@ -184,6 +184,9 @@ func (r *SessionRepository) LastTurns(ctx context.Context, sessionID uuid.UUID, 
 			}
 			pending.Answer = m.Content
 			if m.Answer != nil {
+				if m.Answer.Intent == domain.IntentClarify {
+					pending.ClarificationOptions = m.Answer.Followups
+				}
 				pending.SQL = m.Answer.SQL
 				pending.Query = m.Answer.Query
 				pending.Chart = m.Answer.Chart

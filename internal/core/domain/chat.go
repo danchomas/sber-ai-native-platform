@@ -77,11 +77,12 @@ type AgentStep struct {
 }
 
 type Turn struct {
-	Question string
-	Answer   string
-	SQL      string
-	Query    json.RawMessage
-	Chart    *ChartSpec
+	Question             string
+	Answer               string
+	ClarificationOptions []string
+	SQL                  string
+	Query                json.RawMessage
+	Chart                *ChartSpec
 
 	Result *ResultSet
 

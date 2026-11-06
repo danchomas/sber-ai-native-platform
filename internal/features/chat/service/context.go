@@ -221,6 +221,13 @@ func formatHistory(f *dataFilter, turns []domain.Turn) []domain.ChatMessage {
 		if t.Answer != "" {
 			sb.WriteString(t.Answer)
 		}
+		if len(t.ClarificationOptions) > 0 {
+			sb.WriteString("\n[варианты уточнения:")
+			for j, option := range t.ClarificationOptions {
+				fmt.Fprintf(&sb, "\n%d) %s", j+1, f.clean(option, maxCommentRunes))
+			}
+			sb.WriteString("]")
+		}
 		switch {
 		case len(t.Query) > 0:
 			fmt.Fprintf(&sb, "\n[параметры запроса: %s]", compactSQL(string(t.Query)))

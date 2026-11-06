@@ -233,6 +233,9 @@ func (m *memorySessions) LastTurns(_ context.Context, id uuid.UUID, _ int) ([]do
 		case len(turns) > 0 && msg.Answer != nil:
 			last := &turns[len(turns)-1]
 			last.Answer, last.Blocked = msg.Content, msg.Answer.Blocked
+			if msg.Answer.Intent == domain.IntentClarify {
+				last.ClarificationOptions = msg.Answer.Followups
+			}
 		}
 	}
 	return turns, nil
