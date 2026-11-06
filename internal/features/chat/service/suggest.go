@@ -9,7 +9,16 @@ import (
 
 const maxSuggestions = 3
 
-func suggestQuestions(datasets []domain.Dataset) []string {
+// suggestQuestions предлагает вопросы по первому готовому датасету; датасеты
+// из prefer — те, о которых был ответ, — идут первыми, чтобы подсказки
+// не уводили к чужим данным.
+func suggestQuestions(datasets []domain.Dataset, prefer ...string) []string {
+	if len(prefer) > 0 {
+		datasets = slices.Clone(datasets)
+		slices.SortStableFunc(datasets, func(a, b domain.Dataset) int {
+			return boolRank(slices.Contains(prefer, b.Name)) - boolRank(slices.Contains(prefer, a.Name))
+		})
+	}
 	var out []string
 	add := func(q string) {
 		if len(out) < maxSuggestions {
@@ -41,4 +50,11 @@ func promptName(c domain.Column) string {
 		return c.Name
 	}
 	return name
+}
+
+func boolRank(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

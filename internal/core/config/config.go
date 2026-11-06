@@ -91,6 +91,10 @@ type Agent struct {
 
 	MaxConcurrent int
 
+	// ReasoningComplex включает режим рассуждений модели для сложных вопросов
+	// («при каких условиях», «можно ли утверждать»): дольше, но выводы точнее.
+	ReasoningComplex bool
+
 	QueueWait time.Duration
 }
 
@@ -133,7 +137,7 @@ func Load() (*Config, error) {
 			Timeout:     duration("LLM_TIMEOUT", 120*time.Second),
 			MaxTokens:   integer("LLM_MAX_TOKENS", 2048),
 			Temperature: float("LLM_TEMPERATURE", 0.1),
-			Retries:     integer("LLM_RETRIES", 2),
+			Retries:     integer("LLM_RETRIES", 4),
 			Enabled:     boolean("LLM_ENABLED", true),
 			Providers:   list("LLM_PROVIDER_ORDER", nil),
 		},
@@ -154,7 +158,9 @@ func Load() (*Config, error) {
 			MaxSteps:      integer("AGENT_MAX_STEPS", 10),
 			AllowRawSQL:   boolean("AGENT_ALLOW_RAW_SQL", false),
 			MaxConcurrent: integer("AGENT_MAX_CONCURRENT", 4),
-			QueueWait:     duration("AGENT_QUEUE_WAIT", 30*time.Second),
+
+			ReasoningComplex: boolean("AGENT_REASONING_COMPLEX", false),
+			QueueWait:        duration("AGENT_QUEUE_WAIT", 30*time.Second),
 		},
 		Dashboards: Dashboards{
 			TrashRetention: duration("DASHBOARD_TRASH_RETENTION", 24*time.Hour),

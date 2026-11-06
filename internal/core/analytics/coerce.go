@@ -98,6 +98,41 @@ func coerce(v any, col domain.Column) (any, error) {
 	return nil, invalid("значение %v не подходит к колонке «%s» типа %s", v, title(col), col.Type)
 }
 
+var spanLayouts = []struct {
+	layout string
+	next   func(time.Time) time.Time
+}{
+	{"2006-01-02", func(t time.Time) time.Time { return t.AddDate(0, 0, 1) }},
+	{"02.01.2006", func(t time.Time) time.Time { return t.AddDate(0, 0, 1) }},
+	{"2006-01", func(t time.Time) time.Time { return t.AddDate(0, 1, 0) }},
+	{"01.2006", func(t time.Time) time.Time { return t.AddDate(0, 1, 0) }},
+	{"2006", func(t time.Time) time.Time { return t.AddDate(1, 0, 0) }},
+}
+
+// temporalSpan понимает значение фильтра по дате без времени как отрезок:
+// «2026-09-30» — весь день, «2026-09» — месяц, «2025» — год. Иначе граница
+// «по 30 сентября» по колонке со временем отрезала бы сам день 30 сентября.
+func temporalSpan(v any, col domain.Column) (from, to time.Time, ok bool) {
+	if !col.Type.IsTemporal() {
+		return time.Time{}, time.Time{}, false
+	}
+	switch x := v.(type) {
+	case string:
+		s := strings.TrimSpace(x)
+		for _, span := range spanLayouts {
+			if t, err := time.Parse(span.layout, s); err == nil {
+				return t, span.next(t), true
+			}
+		}
+	case float64:
+		if x == math.Trunc(x) && x >= 1900 && x <= 2200 {
+			t := time.Date(int(x), time.January, 1, 0, 0, 0, 0, time.UTC)
+			return t, t.AddDate(1, 0, 0), true
+		}
+	}
+	return time.Time{}, time.Time{}, false
+}
+
 func coerceList(values []any, col domain.Column) (any, error) {
 	converted := make([]any, 0, len(values))
 	for _, v := range values {

@@ -124,3 +124,43 @@ func TestNormalizeNilSpec(t *testing.T) {
 		t.Fatalf("ожидался подбор по форме данных, получено %s", got.Type)
 	}
 }
+
+func TestNormalizeDropsInvalidSeries(t *testing.T) {
+	data := rs([]domain.ResultColumn{
+		col("Площадка", domain.ColumnTypeText),
+		col("Аудитория", domain.ColumnTypeText),
+		col("ROMI, %", domain.ColumnTypeNumeric),
+	}, []any{"VK", "новые", -48.0}, []any{"Telegram", "новые", 74.1})
+
+	tests := []struct {
+		name, series, want string
+	}{
+		{"числовая колонка", "ROMI, %", ""},
+		{"совпадает с осью X", "Площадка", ""},
+		{"нет такой колонки", "Город", ""},
+		{"категория", "Аудитория", "Аудитория"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := &domain.ChartSpec{Type: domain.ChartTypeBar, X: "Площадка", Y: []string{"ROMI, %"}, Series: tt.series}
+			if got := Normalize(spec, data, "t").Series; got != tt.want {
+				t.Fatalf("серия %q: получено %q, ожидалось %q", tt.series, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHumanizeCapitalizesCyrillic(t *testing.T) {
+	tests := map[string]string{
+		"площадка":     "Площадка",
+		"время_в_пути": "Время в пути",
+		"ROMI, %":      "ROMI, %",
+		"":             "",
+		"ёмкость":      "Ёмкость",
+	}
+	for in, want := range tests {
+		if got := humanize(in); got != want {
+			t.Errorf("humanize(%q) = %q, ожидалось %q", in, got, want)
+		}
+	}
+}

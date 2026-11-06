@@ -13,7 +13,7 @@ import (
 var dataTools = []string{
 	toolDescribe, toolAggregate, toolRows, toolDuplicates,
 	toolSeasonality, toolCorrelate, toolForecast, toolAnomalies,
-	toolCompare, toolWhatIf, toolRecalc,
+	toolCompare, toolWhatIf, toolRecalc, toolDrivers, toolConfounder, toolPeriods,
 }
 
 func (s *Service) DataTools() []domain.ToolSpec {

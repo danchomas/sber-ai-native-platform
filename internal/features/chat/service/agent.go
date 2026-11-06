@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/heinousness/aibi/internal/core/analytics"
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/chart"
 	"github.com/heinousness/aibi/internal/core/domain"
 	"github.com/heinousness/aibi/internal/core/llm"
@@ -48,11 +49,15 @@ type agentResult struct {
 	chart    *domain.ChartSpec
 	records  bool
 	segments bool
+	// partialStart — метка последнего неполного периода результата: модель его
+	// строк не видит, а главное число над графиком считается без него.
+	partialStart string
 }
 
 type agentFinal struct {
 	intent    domain.AnswerIntent
 	text      string
+	verdict   string
 	resultID  string
 	chart     *chartJSON
 	followups []string
@@ -85,6 +90,11 @@ type agentRun struct {
 	edited    bool
 	final     *agentFinal
 	gaveUp    bool
+
+	// canReview — у цикла есть шаг, чтобы переделать ответ; reviewed —
+	// ответ уже возвращался на доработку: второй раз не возвращается.
+	canReview bool
+	reviewed  bool
 }
 
 func (s *Service) runAgent(
@@ -103,15 +113,18 @@ func (s *Service) runAgent(
 
 	messages := formatHistory(in.filter, in.turns)
 	messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: in.question})
-	system := buildAgentPrompt(buildToolContext(in.filter, in.datasets, in.relations), s.agent.AllowRawSQL, in.canary)
+	system := buildAgentPrompt(buildToolContext(in.filter, in.datasets, in.relations), s.agent.AllowRawSQL, in.canary, in.question)
 
+	reasoning := s.agent.ReasoningComplex && questionPlan(in.question) != ""
 	_, choiceOff := s.noToolChoice.Load(in.model)
 	nudged, force := false, !choiceOff
+	lastChance := false
 	for step := 0; step < s.agent.MaxSteps; step++ {
-		req := domain.Completion{System: system, Messages: messages, Tools: tools, RequireTool: force}
+		req := domain.Completion{System: system, Messages: messages, Tools: tools, RequireTool: force, Reasoning: reasoning}
 		force = false
+		r.canReview = step+1 < s.agent.MaxSteps
 		started := time.Now()
-		reply, err := caller.Converse(ctx, req)
+		reply, err := s.converse(ctx, caller, req)
 		s.log.DebugContext(ctx, "ответ модели получен", "step", step, "elapsed_ms", time.Since(started).Milliseconds(),
 			"calls", len(reply.ToolCalls), "content_runes", len([]rune(reply.Content)))
 		if err != nil && req.RequireTool && errors.Is(err, llm.ErrToolChoiceUnsupported) {
@@ -119,14 +132,15 @@ func (s *Service) runAgent(
 			choiceOff = true
 			s.log.InfoContext(ctx, "сервер не принимает tool_choice, агент спрашивает без него", "model", in.model)
 			req.RequireTool = false
-			reply, err = caller.Converse(ctx, req)
+			reply, err = s.converse(ctx, caller, req)
 		}
 		if err != nil {
 			if step == 0 {
 				return nil, err
 			}
 			s.log.WarnContext(ctx, "модель перестала отвечать в цикле агента", "step", step, "error", err)
-			r.warnings = append(r.warnings, "Языковая модель перестала отвечать, поэтому показан последний полученный результат.")
+			r.warnings = append(r.warnings, "Языковая модель перестала отвечать, поэтому вывод составлен по последнему полученному результату.")
+			r.narrateLast(ctx)
 			return r.finish(""), nil
 		}
 
@@ -181,10 +195,14 @@ func (s *Service) runAgent(
 		}
 
 		switch {
+		case r.repeats >= maxRepeats && !lastChance && len(r.results) > 0 && step+1 < s.agent.MaxSteps:
+			lastChance, force = true, !choiceOff
+			messages = append(messages, domain.ChatMessage{Role: domain.RoleUser, Content: repeatNudge})
 		case r.repeats >= maxRepeats:
 			s.log.InfoContext(ctx, "агент остановлен: модель повторяет одни и те же вызовы", "step", step)
 			r.warnings = append(r.warnings,
 				"Модель начала повторять одни и те же действия, поэтому показан последний полученный результат.")
+			r.narrateLast(ctx)
 			return r.finish(""), nil
 		case r.repairs > s.cfg.MaxRepairs:
 			s.log.InfoContext(ctx, "агент остановлен: модель не исправила запрос", "step", step, "repairs", s.cfg.MaxRepairs)
@@ -201,8 +219,54 @@ func (s *Service) runAgent(
 
 	r.warnings = append(r.warnings,
 		"Анализ не уложился в отведённое число шагов, поэтому показан последний полученный результат.")
+	r.narrateLast(ctx)
 	return r.finish(""), nil
 }
+
+// converse — один шаг цикла. Клиент модели уже повторил запрос при сетевом
+// сбое, но обрыв на шлюзе бывает и дольше: ещё одна попытка после паузы
+// дешевле ответа без вывода. Отказ в инструментах не повторяется — это не сбой.
+func (s *Service) converse(ctx context.Context, caller ToolCaller, req domain.Completion) (domain.Reply, error) {
+	reply, err := caller.Converse(ctx, req)
+	if err == nil || !errors.Is(err, apperr.ErrLLMUnavailable) || ctx.Err() != nil ||
+		errors.Is(err, llm.ErrToolsUnsupported) || errors.Is(err, llm.ErrToolChoiceUnsupported) {
+		return reply, err
+	}
+	s.log.WarnContext(ctx, "модель не ответила, агент повторяет шаг", "error", err)
+	select {
+	case <-ctx.Done():
+		return reply, err
+	case <-time.After(s.stepPause):
+	}
+	return caller.Converse(ctx, req)
+}
+
+// narrateLast излагает последний результат отдельным коротким вызовом, когда
+// цикл оборвался без ответа: короткий запрос без истории часто проходит там,
+// где длинный не прошёл. Не вышло и это — останется текст по самой таблице.
+func (r *agentRun) narrateLast(ctx context.Context) {
+	if r.final != nil {
+		return
+	}
+	var res *agentResult
+	for i := len(r.results) - 1; i >= 0; i-- {
+		if !r.results[i].records {
+			res = r.results[i]
+			break
+		}
+	}
+	if res == nil || res.result.Empty() {
+		return
+	}
+	text := r.s.narrate(ctx, r.filter, r.question, res.title, res.result, res.warnings)
+	r.final = &agentFinal{intent: domain.IntentQuery, text: text, resultID: res.id}
+}
+
+// repeatNudge даёт модели, которая начала повторять вызовы, один шаг на
+// ответ по готовым результатам — вместо шаблонного текста без выводов.
+const repeatNudge = "Ты повторяешь вызовы, которые уже выполнены. Новых расчётов больше не будет: " +
+	"вызови answer сейчас и ответь на вопрос по уже полученным результатам. " +
+	"Если результат не отвечает на вопрос полностью, скажи прямо, что удалось выяснить и чего не хватает."
 
 const groundingNudge = "Ответ не принят: факты и числа о данных можно брать только из результатов инструментов. " +
 	"Если неясно, к какому датасету относится вопрос, вызови clarify с вариантами из каталога до расчётов. " +
@@ -340,7 +404,25 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 			return "", 0, err
 		}
 		q := args.Query
-		return r.run(ctx, compiled, &q, orDefault(args.Title, r.question))
+		out, rows, err := r.run(ctx, compiled, &q, orDefault(args.Title, r.question))
+		if err != nil {
+			return "", 0, err
+		}
+		res := r.results[len(r.results)-1]
+		if nameCalendar(q, res.result) {
+			out = encodeOutput(r.resultOutput(res))
+		}
+		if warnings, hints := r.qualityNotes(ctx, q, res.result); len(warnings)+len(hints) > 0 {
+			res.warnings = append(res.warnings, warnings...)
+			payload := r.resultOutput(res)
+			payload["hints"] = hints
+			if last, ok := r.partialPeriodStart(q, res.result); ok && dropPartialRows(payload, last) > 0 {
+				res.partialStart = last
+				payload["partial_period_removed"] = last
+			}
+			out = encodeOutput(payload)
+		}
+		return out, rows, nil
 
 	case toolRows:
 		var args analytics.RowsQuery
@@ -396,6 +478,21 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
 		}
 		return r.recalculate(ctx, call.Arguments)
+	case toolDrivers:
+		if len(r.results) >= maxResultsPerRun {
+			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
+		}
+		return r.findDrivers(ctx, call.Arguments)
+	case toolConfounder:
+		if len(r.results) >= maxResultsPerRun {
+			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
+		}
+		return r.checkConfounder(ctx, call.Arguments)
+	case toolPeriods:
+		if len(r.results) >= maxResultsPerRun {
+			return "", 0, errors.New("достигнут предел запросов на один вопрос: подведи итог через answer")
+		}
+		return r.comparePeriods(ctx, call.Arguments)
 	case toolDashboards:
 		return r.listDashboards(ctx)
 	case toolAddWidgets:
@@ -409,6 +506,7 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 			ResultID  string     `json:"result_id"`
 			Chart     *chartJSON `json:"chart"`
 			Followups stringList `json:"followups"`
+			Verdict   string     `json:"verdict"`
 		}
 		if err := decodeArgs(call.Arguments, &args); err != nil {
 			return "", 0, err
@@ -419,9 +517,19 @@ func (r *agentRun) invoke(ctx context.Context, call domain.ToolCall) (string, in
 		if hasForeignScript(args.Text) {
 			return "", 0, errors.New("в тексте ответа есть символы другой письменности: перепиши ответ только по-русски и вызови answer снова")
 		}
+		if r.canReview && !r.reviewed && len(r.results) > 0 {
+			if note := r.reviewAnswer(args.Text, args.ResultID); note != "" {
+				r.reviewed = true
+				return "", 0, errors.New(note)
+			}
+		}
+		verdict := verdictOf(r.question, args.Text)
+		if verdict == "" {
+			verdict = strings.ToLower(strings.TrimSpace(args.Verdict))
+		}
 		r.final = &agentFinal{
 			intent: domain.IntentQuery, text: args.Text, resultID: args.ResultID,
-			chart: args.Chart, followups: args.Followups,
+			chart: args.Chart, followups: args.Followups, verdict: verdict,
 		}
 		return `{"ok":true}`, 0, nil
 
@@ -721,7 +829,7 @@ func (r *agentRun) finish(content string) *domain.Answer {
 	}
 	f.text = humanizeTableNames(f.text, r.s.catalog.Schema(), r.datasets)
 
-	answer := &domain.Answer{Steps: r.steps, Warnings: r.warnings, Followups: f.followups}
+	answer := &domain.Answer{Steps: r.steps, Warnings: r.warnings, Followups: f.followups, Verdict: f.verdict}
 	switch {
 	case f.intent == domain.IntentClarify || f.intent == domain.IntentReject:
 		answer.Intent = f.intent
@@ -763,7 +871,17 @@ func (r *agentRun) finish(content string) *domain.Answer {
 			answer.ChartOptions = chart.Options(spec, res.result)
 		}
 		if res.analysis == "" && spec.Type != domain.ChartTypeTable {
-			answer.Headline = chart.Headline(spec, res.result)
+			answer.Headline = chart.Headline(spec, withoutPeriod(res.result, res.partialStart))
+			if res.query != nil && !additiveMetrics(res.query.Metrics) {
+				dropShare(answer.Headline)
+			}
+			if h := answer.Headline; h != nil && res.partialStart != "" {
+				h.Label = strings.Replace(h.Label, "Последнее значение", "Последний полный период", 1)
+			}
+		}
+		if res.partialStart != "" && (spec.Type == domain.ChartTypeLine || spec.Type == domain.ChartTypeArea) {
+			spec.PartialLast = true
+			answer.Chart = &spec
 		}
 		answer.Datasets = r.usedDatasets([]*agentResult{res})
 		answer.Warnings = append(answer.Warnings, res.warnings...)
@@ -796,7 +914,7 @@ func (r *agentRun) finish(content string) *domain.Answer {
 				r.s.cfg.MaxRepairs, r.lastError)
 		}
 		if len(answer.Followups) == 0 {
-			answer.Followups = suggestQuestions(r.datasets)
+			answer.Followups = suggestQuestions(r.datasets, r.usedDatasets(r.results)...)
 		}
 		return answer
 	}
@@ -886,6 +1004,12 @@ func stepTitle(tool string) string {
 		return "Оценил сценарий «что если»"
 	case toolRecalc:
 		return "Пересчитал показатель по сценарию"
+	case toolDrivers:
+		return "Поискал условия, от которых зависит показатель"
+	case toolConfounder:
+		return "Проверил, не объясняется ли разница составом групп"
+	case toolPeriods:
+		return "Сравнил период с обычными колебаниями"
 	}
 	return "Неизвестный инструмент «" + tool + "»"
 }

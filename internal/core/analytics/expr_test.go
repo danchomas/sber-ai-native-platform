@@ -57,15 +57,19 @@ func TestCompileExprRejects(t *testing.T) {
 	}{
 		{"вызов функции", Metric{Func: FuncSum, Expr: "pg_sleep(10)"}, "нет в датасете"},
 		{"подзапрос", Metric{Func: FuncSum, Expr: "(SELECT 1 FROM pg_authid)"}, "нет в датасете"},
-		{"точка с запятой", Metric{Func: FuncSum, Expr: "amount; DROP TABLE x"}, "только числовые колонки"},
+		{"точка с запятой", Metric{Func: FuncSum, Expr: "amount; DROP TABLE x"}, "допустимы числовые колонки"},
 		{"комментарий", Metric{Func: FuncSum, Expr: "amount /* x */"}, ""},
-		{"строка", Metric{Func: FuncSum, Expr: "amount || 'x'"}, "только числовые колонки"},
+		{"строка", Metric{Func: FuncSum, Expr: "amount || 'x'"}, "допустимы числовые колонки"},
 		{"кавычка в кавычках", Metric{Func: FuncSum, Expr: `"amount"" FROM pg_authid --"`}, "лишнее в конце"},
-		{"приведение типа", Metric{Func: FuncSum, Expr: "amount::text"}, "только числовые колонки"},
-		{"степень", Metric{Func: FuncSum, Expr: "amount ^ 2"}, "только числовые колонки"},
+		{"приведение типа", Metric{Func: FuncSum, Expr: "amount::text"}, "допустимы числовые колонки"},
+		{"степень", Metric{Func: FuncSum, Expr: "amount ^ 2"}, "допустимы числовые колонки"},
 		{"неизвестная колонка", Metric{Func: FuncSum, Expr: "price * 2"}, "нет в датасете"},
 		{"текстовая колонка", Metric{Func: FuncSum, Expr: "status * 2"}, "не числовая"},
-		{"колонка с датой", Metric{Func: FuncSum, Expr: "created_at + 1"}, "не числовая"},
+		{"дата плюс число", Metric{Func: FuncSum, Expr: "created_at + 1"}, "только разность двух колонок"},
+		{"дата как показатель", Metric{Func: FuncAvg, Expr: "created_at"}, "дата не может быть показателем"},
+		{"сумма дат", Metric{Func: FuncAvg, Expr: "created_at + shipped_at"}, "только разность двух колонок"},
+		{"дата умножена", Metric{Func: FuncAvg, Expr: "(shipped_at - created_at) * created_at"}, "только разность двух колонок"},
+		{"минус дата", Metric{Func: FuncAvg, Expr: "-created_at"}, "только разность двух колонок"},
 		{"лишнее в конце", Metric{Func: FuncSum, Expr: "amount amount"}, "лишнее в конце"},
 		{"незакрытая скобка", Metric{Func: FuncSum, Expr: "(amount"}, "не закрыта скобка"},
 		{"незакрытая кавычка", Metric{Func: FuncSum, Expr: `"amount`}, "не закрыта кавычка"},
@@ -79,7 +83,7 @@ func TestCompileExprRejects(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Compile(Query{Dataset: "orders", GroupBy: []string{"status"}, Metrics: []Metric{tc.metric}}, testCatalog(), 1000)
+			_, err := Compile(Query{Dataset: "orders", GroupBy: []string{"status"}, Metrics: []Metric{tc.metric}}, lifecycleCatalog(), 1000)
 			if !errors.Is(err, apperr.ErrValidation) {
 				t.Fatalf("ожидалась ошибка проверки, получено %v", err)
 			}

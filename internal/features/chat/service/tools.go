@@ -70,19 +70,33 @@ func metricSchema(fnDesc string) schema {
 		"fn":     enum(analytics.Funcs, fnDesc),
 		"column": text("колонка датасета; для count можно не указывать"),
 		"expr": text("формула вместо column, если показателя нет отдельной колонкой: числовые колонки, числа, + - * / и скобки, " +
-			"например количество * цена * (1 - скидка / 100)"),
+			"например количество * цена * (1 - скидка / 100). Разность двух колонок с датами — длительность в часах: " +
+			"\"Начало работы\" - \"Создано\"; в днях — (\"Завершено\" - \"Создано\") / 24. " +
+			"При fn calc — формула из итогов: (sum(\"Выручка\") - sum(\"Расходы\")) / sum(\"Расходы\") * 100 — ROMI, " +
+			"sum(\"Клики\") / sum(\"Показы\") * 100 — CTR; функции sum, avg, min, max, count, count_distinct"),
 		"per":   text("колонка-знаменатель: показатель на одно её уникальное значение, например сумма на один заказ"),
 		"label": text("подпись показателя по-русски"),
+		"filters": conditionsSchema("условия только для этой метрики: она считается по части строк, остальные метрики — по всем. " +
+			"Так в одном запросе сравниваются группы (среднее ожидание крупных и мелких задач), " +
+			"а fn share с условием даёт долю таких строк в группе, например долю просроченных. " +
+			"У share условие сужает только числитель: период и отбор самой группы задавай в filters запроса, time или group_by"),
 	}, "fn")
 }
 
 func filtersSchema() schema {
+	return conditionsSchema("условия отбора строк, объединяются через И")
+}
+
+func conditionsSchema(desc string) schema {
 	return list(object(schema{
 		"column": text("колонка датасета"),
+		"expr": text("формула вместо column, сравнивается с числом: \"Завершено\" - \"Срок выполнения\" с op gt и value 0 — " +
+			"просроченные записи, \"Начало работы\" - \"Создано\" с op gt и value 72 — ждали дольше трёх суток. " +
+			"С другой колонкой не сравнивают — её переносят в формулу: \"Закрыто\" - \"Создано\" - \"Норматив, ч\" с op gt и value 0"),
 		"op":     enum(analytics.Ops, "оператор сравнения"),
 		"value":  schema{"description": "значение: число, строка или дата ГГГГ-ММ-ДД"},
 		"values": schema{"type": "array", "description": "список значений для in, not_in и [начало, конец] для between"},
-	}, "column", "op"), "условия отбора строк, объединяются через И")
+	}, "op"), desc)
 }
 
 func sortSchema() schema {
@@ -232,6 +246,9 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 				"result_id": text("какой результат показать; по умолчанию последний"),
 				"chart":     chartSchema(),
 				"followups": list(schema{"type": "string"}, "два-три уместных следующих вопроса"),
+				"verdict": schema{"type": "string", "enum": []string{"да", "нет", "частично", "нельзя утверждать"},
+					"description": "для вопроса-проверки («правда ли», «можно ли утверждать», «стало ли»): вывод одним словом; " +
+						"частично — в одних группах верно, в других нет. Текст ответа начинай с него же"},
 			}, "text"),
 		},
 		{
@@ -254,6 +271,9 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 	}
 	tools = append(tools, insightTools()...)
 	tools = append(tools, segmentTools()...)
+	tools = append(tools, driverTools()...)
+	tools = append(tools, confounderTools()...)
+	tools = append(tools, periodTools()...)
 	if allowSQL {
 		tools = append(tools, struct {
 			name, desc string
@@ -280,6 +300,14 @@ func agentTools(allowSQL bool, access toolAccess) []domain.ToolSpec {
 	return out
 }
 
+// wrapConditions превращает одиночное условие метрики в список: модели
+// нередко передают объект там, где схема ждёт массив.
+func wrapConditions(metric map[string]any) {
+	if v, ok := metric["filters"].(map[string]any); ok {
+		metric["filters"] = []any{v}
+	}
+}
+
 func normalizeArgs(raw json.RawMessage, arrays ...string) json.RawMessage {
 	var m map[string]any
 	if err := json.Unmarshal(raw, &m); err != nil {
@@ -299,9 +327,17 @@ func normalizeArgs(raw json.RawMessage, arrays ...string) json.RawMessage {
 	}
 	if metrics, ok := m["metrics"].([]any); ok {
 		for i, x := range metrics {
-			if s, ok := x.(string); ok {
-				metrics[i] = map[string]any{"fn": s}
+			switch v := x.(type) {
+			case string:
+				metrics[i] = map[string]any{"fn": v}
+			case map[string]any:
+				wrapConditions(v)
 			}
+		}
+	}
+	for _, key := range []string{"metric", "x", "y", "target", "driver"} {
+		if v, ok := m[key].(map[string]any); ok {
+			wrapConditions(v)
 		}
 	}
 	for _, key := range []string{"limit", "width"} {

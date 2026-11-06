@@ -38,6 +38,9 @@ type ChartSpec struct {
 	YLabel   string    `json:"y_label,omitempty"`
 	Unit     string    `json:"unit,omitempty"`
 	Reason   string    `json:"reason,omitempty"`
+	// PartialLast — последняя точка ряда относится к неполному периоду:
+	// интерфейс рисует её пунктиром, чтобы обрыв линии не читался как перемена.
+	PartialLast bool `json:"partial_last,omitempty"`
 }
 
 type Headline struct {

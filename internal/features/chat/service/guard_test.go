@@ -207,14 +207,37 @@ func TestAgentStopsOnRepeatedCalls(t *testing.T) {
 	if len(exec.queries) != 1 {
 		t.Fatalf("повторный вызов не должен снова идти в базу: запросов %d", len(exec.queries))
 	}
-	if model.conversations() != 1+maxRepeats {
-		t.Fatalf("цикл должен остановиться после %d повторов, обращений %d", maxRepeats, model.conversations())
+	if model.conversations() != 2+maxRepeats {
+		t.Fatalf("после %d повторов модель получает ещё один шаг на ответ, затем цикл останавливается; обращений %d",
+			maxRepeats, model.conversations())
 	}
 	if answer.Result == nil || len(answer.Warnings) == 0 {
 		t.Fatalf("ожидался полученный результат с оговоркой: %+v", answer)
 	}
 	if tools := model.toolMessages(); !strings.Contains(tools[len(tools)-1].Content, `"repeat":true`) {
 		t.Fatal("модель должна узнать, что повторяет вызов")
+	}
+}
+
+func TestAgentAnswersAfterRepeatNudge(t *testing.T) {
+	replies := []domain.Reply{calls(call("c0", toolAggregate, `{"dataset":"orders","group_by":["status"]}`))}
+	for i := range maxRepeats {
+		replies = append(replies, calls(call(fmt.Sprint("r", i), toolAggregate, `{"dataset":"orders","group_by":["status"]}`)))
+	}
+	replies = append(replies, calls(call("a", toolAnswer, `{"text":"Больше всего заказов в статусе paid.","result_id":"r1"}`)))
+	model := newToolLLM(replies...)
+	svc, sessionID, _ := newTestAgent(t, model, &fakeExecutor{result: sampleResult()}, &fakeDashboards{})
+
+	answer, err := svc.Ask(context.Background(), sessionID, "статусы")
+	if err != nil {
+		t.Fatalf("неожиданная ошибка: %v", err)
+	}
+	if answer.Text != "Больше всего заказов в статусе paid." || len(answer.Warnings) != 0 {
+		t.Fatalf("после напоминания модель должна ответить сама, без шаблона: %+v", answer)
+	}
+	last := model.requests[len(model.requests)-1]
+	if got := last.Messages[len(last.Messages)-1].Content; got != repeatNudge || !last.RequireTool {
+		t.Fatalf("последний шаг должен начинаться с напоминания и требовать инструмент: %q", got)
 	}
 }
 

@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"encoding/json"
+	"strconv"
+	"time"
+)
 
 type ResultColumn struct {
 	Name string     `json:"name"`
@@ -12,8 +16,25 @@ type ResultSet struct {
 	Rows      [][]any        `json:"rows"`
 	RowCount  int            `json:"row_count"`
 	Truncated bool           `json:"truncated"`
-	Duration  time.Duration  `json:"duration_ms"`
+	Duration  Millis         `json:"duration_ms"`
 	SQL       string         `json:"sql,omitempty"`
+}
+
+// Millis — длительность, которая в JSON записывается целыми миллисекундами,
+// как обещает имя поля. time.Duration без обёртки уходит наружу наносекундами.
+type Millis time.Duration
+
+func (m Millis) MarshalJSON() ([]byte, error) {
+	return strconv.AppendInt(nil, time.Duration(m).Milliseconds(), 10), nil
+}
+
+func (m *Millis) UnmarshalJSON(data []byte) error {
+	var ms int64
+	if err := json.Unmarshal(data, &ms); err != nil {
+		return err
+	}
+	*m = Millis(time.Duration(ms) * time.Millisecond)
+	return nil
 }
 
 func (r *ResultSet) Empty() bool { return r == nil || len(r.Rows) == 0 }

@@ -370,7 +370,7 @@ func (r *RawDataRepository) Query(ctx context.Context, target domain.QueryTarget
 	}
 
 	rs.RowCount = len(rs.Rows)
-	rs.Duration = time.Since(started)
+	rs.Duration = domain.Millis(time.Since(started))
 	return rs, nil
 }
 

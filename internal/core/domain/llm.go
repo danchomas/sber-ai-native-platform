@@ -16,6 +16,10 @@ type Completion struct {
 	JSONOnly    bool
 
 	RequireTool bool
+
+	// Reasoning просит модель рассуждать перед ответом, если клиент умеет
+	// этим управлять (OpenRouter); остальные клиенты поле не передают.
+	Reasoning bool
 }
 
 type ChatMessage struct {

@@ -55,7 +55,10 @@ type Answer struct {
 	Headline    *Headline  `json:"headline,omitempty"`
 	DashboardID *uuid.UUID `json:"dashboard_id,omitempty"`
 
-	Analysis  string   `json:"analysis,omitempty"`
+	Analysis string `json:"analysis,omitempty"`
+	// Verdict — вывод ответа на вопрос-проверку одним словом: да, нет,
+	// частично или нельзя утверждать.
+	Verdict   string   `json:"verdict,omitempty"`
 	Datasets  []string `json:"datasets,omitempty"`
 	Followups []string `json:"followups,omitempty"`
 	Warnings  []string `json:"warnings,omitempty"`

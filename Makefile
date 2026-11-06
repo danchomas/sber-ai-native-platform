@@ -112,6 +112,10 @@ datasets: ## Загрузить наборы из ./datasets (можно ука�
 scenarios: ## Прогнать вопросы сценариев ТЗ и атаки через API (нужен поднятый стенд и jq)
 	scripts/scenarios.sh
 
+.PHONY: eval-hard
+eval-hard: ## Сложные вопросы уровня финала с автооценкой: RUNS=3 ONLY=q1,q2 (нужен поднятый стенд)
+	python3 scripts/hard/eval.py --runs $${RUNS:-3} $${ONLY:+--only $$ONLY}
+
 .PHONY: scenarios-ui
 scenarios-ui: ## Пройти 19 вопросов ТЗ через интерфейс со снимками в frontend/.screenshots/scenarios
 	cd frontend && npm run scenarios -- http://localhost:3000 .screenshots/scenarios

@@ -153,11 +153,29 @@ function axisY(svg, scale, box, t, formatter) {
   }
 }
 
+const LABEL_ANGLE = 35;
+const LABEL_CHAR_W = 6.5;
+
+function rotatesLabels(categories, width) {
+  const band = width / Math.max(1, categories.length);
+  const longest = categories.reduce((m, c) => Math.max(m, String(c).length), 0);
+  return longest > 10 && band < 70;
+}
+
+// labelOverflow — сколько высоты добавить под осью X, чтобы наклонные подписи
+// не уходили за нижний край графика и не налезали на легенду. room — место,
+// которое уже есть между осью и краем.
+function labelOverflow(categories, width, room) {
+  if (!rotatesLabels(categories, width)) return 0;
+  const chars = Math.min(categories.reduce((m, c) => Math.max(m, String(c).length), 0), 18);
+  const depth = 12 + chars * LABEL_CHAR_W * Math.sin((LABEL_ANGLE * Math.PI) / 180) + 6;
+  return Math.max(0, Math.ceil(depth - room));
+}
+
 function axisXLabels(svg, categories, box, t) {
   const step = Math.ceil(categories.length / Math.max(1, Math.floor(box.w / 64)));
   const band = box.w / categories.length;
-  const longest = categories.reduce((m, c) => Math.max(m, String(c).length), 0);
-  const rotate = longest > 10 && band < 70;
+  const rotate = rotatesLabels(categories, box.w);
 
   categories.forEach((cat, i) => {
     if (i % step !== 0) return;
@@ -166,7 +184,7 @@ function axisXLabels(svg, categories, box, t) {
     if (rotate) {
       s("text", {
         x: cx, y: box.y + box.h + 12, "text-anchor": "end",
-        transform: `rotate(-35 ${cx} ${box.y + box.h + 12})`, text: label,
+        transform: `rotate(-${LABEL_ANGLE} ${cx} ${box.y + box.h + 12})`, text: label,
       }, svg);
     } else {
       s("text", { x: cx, y: box.y + box.h + 16, "text-anchor": "middle", text: label }, svg);
@@ -203,8 +221,8 @@ function attachTip(svg, tip) {
 }
 
 function columns(data, spec, t, height) {
-  const H = height;
-  const box = { x: 58, y: 12, w: W - 74, h: H - 58 };
+  const box = { x: 58, y: 12, w: W - 74, h: height - 58 };
+  const H = height + labelOverflow(data.categories, box.w, height - box.y - box.h);
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
   const stacked = !!spec.stacked && data.series.length > 1;
 
@@ -305,8 +323,8 @@ function bars(data, spec, t, height) {
 }
 
 function lines(data, spec, t, height, area) {
-  const H = height;
-  const box = { x: 58, y: 12, w: W - 130, h: H - 58 };
+  const box = { x: 58, y: 12, w: W - 130, h: height - 58 };
+  const H = height + labelOverflow(data.categories, box.w, height - box.y - box.h);
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
   const scale = extent(data.series);
   axisY(svg, scale, box, t);
@@ -318,6 +336,10 @@ function lines(data, spec, t, height, area) {
   data.series.forEach((sr) => {
     const points = sr.values.map((v, i) => (v === null ? null : [px(i), py(v)])).filter(Boolean);
     if (!points.length) return;
+    const last = sr.values.reduce((acc, v, i) => (v === null ? acc : i), -1);
+    // Последний период неполный: его отрезок пунктиром, точка полая —
+    // обрыв линии в конце выгрузки не должен читаться как перемена.
+    const partial = Boolean(spec.partial_last) && points.length >= 2 && last === data.categories.length - 1;
 
     if (area) {
       const d = `M${points[0][0]},${box.y + box.h}` +
@@ -326,28 +348,40 @@ function lines(data, spec, t, height, area) {
       s("path", { d, fill: sr.color, "fill-opacity": 0.1 }, svg);
     }
 
+    const solid = partial ? points.slice(0, -1) : points;
     s("path", {
-      d: "M" + points.map((p) => `${p[0]},${p[1]}`).join("L"),
+      d: "M" + solid.map((p) => `${p[0]},${p[1]}`).join("L"),
       fill: "none", stroke: sr.color, "stroke-width": 2,
       "stroke-linejoin": "round", "stroke-linecap": "round",
     }, svg);
+    if (partial) {
+      const [a, b] = points.slice(-2);
+      s("path", {
+        d: `M${a[0]},${a[1]}L${b[0]},${b[1]}`, class: "partial",
+        fill: "none", stroke: sr.color, "stroke-width": 2, "stroke-dasharray": "5 5",
+        "stroke-linecap": "round", "stroke-opacity": 0.7,
+      }, svg);
+    }
 
     if (points.length <= 40) {
       sr.values.forEach((v, i) => {
         if (v === null) return;
+        const unfinished = partial && i === last;
         s("circle", {
-          cx: px(i), cy: py(v), r: 4, fill: sr.color,
-          stroke: t.surface, "stroke-width": 2,
-          dataset: { tip: tipText(truncate(data.categories[i], 40), `${sr.name}: ${fmtNum(v)}`) },
+          cx: px(i), cy: py(v), r: 4, fill: unfinished ? t.surface : sr.color,
+          stroke: unfinished ? sr.color : t.surface, "stroke-width": 2,
+          dataset: {
+            tip: tipText(truncate(data.categories[i], 40),
+              `${sr.name}: ${fmtNum(v)}${unfinished ? " — период неполный" : ""}`),
+          },
         }, svg);
       });
     }
 
-    const last = sr.values.reduce((acc, v, i) => (v === null ? acc : i), -1);
     if (last >= 0 && data.series.length <= 4) {
       s("text", {
         x: px(last) + 7, y: py(sr.values[last]) + 4,
-        class: "value", text: fmtCompact(sr.values[last]),
+        class: "value", text: fmtCompact(sr.values[last]) + (partial ? " · неполный" : ""),
       }, svg);
     }
   });
@@ -482,8 +516,9 @@ function histogram(spec, result, t, height) {
 
 function heatmap(data, spec, t, height) {
   const rows = data.series.length;
-  const H = Math.max(height, 26 * rows + 70);
+  const base = Math.max(height, 26 * rows + 70);
   const box = { x: 148, y: 10, w: W - 170, h: 24 * rows };
+  const H = base + labelOverflow(data.categories, box.w, base - box.y - box.h);
   const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
 
   let max = 0;

@@ -33,6 +33,10 @@ type Client struct {
 	retries     int
 	noReasoning bool
 	providers   []string
+	// modelProbe — проверять модель запросом по ней одной, а не полным
+	// списком /models: у OpenRouter список весит под мегабайт и на медленной
+	// сети не укладывается в предел проверки здоровья.
+	modelProbe bool
 }
 
 func New(c config.LLM) *Client {
@@ -97,8 +101,13 @@ type responseFormat struct {
 }
 
 type reasoning struct {
-	Enabled bool `json:"enabled"`
+	Enabled bool   `json:"enabled"`
+	Effort  string `json:"effort,omitempty"`
 }
+
+// reasoningMaxTokens — предел ответа с рассуждением: рассуждение входит
+// в max_tokens, и при обычном пределе на сам ответ может не остаться места.
+const reasoningMaxTokens = 8192
 
 type chatMessageJSON struct {
 	Role       string         `json:"role"`
@@ -159,7 +168,9 @@ func (c *Client) Converse(ctx context.Context, req domain.Completion) (domain.Re
 	var lastErr error
 	for attempt := 0; attempt <= c.retries; attempt++ {
 		if attempt > 0 {
-			delay := time.Duration(attempt) * 500 * time.Millisecond
+			// Обрывы шлюза (EOF, пустой ответ) обычно проходят за секунды:
+			// пауза растёт с каждой попыткой, чтобы не попасть в тот же сбой.
+			delay := time.Duration(attempt) * time.Second
 			select {
 			case <-ctx.Done():
 				return domain.Reply{}, ctx.Err()
@@ -228,6 +239,10 @@ func (c *Client) buildRequest(req domain.Completion) chatRequest {
 	}
 	if c.noReasoning {
 		payload.Reasoning = &reasoning{Enabled: false}
+		if req.Reasoning {
+			payload.Reasoning = &reasoning{Enabled: true, Effort: "low"}
+			payload.MaxTokens = max(payload.MaxTokens, reasoningMaxTokens)
+		}
 	}
 	if len(c.providers) > 0 {
 		payload.Provider = &providerRouting{Order: c.providers}
@@ -269,10 +284,13 @@ func (c *Client) do(ctx context.Context, body []byte) (reply domain.Reply, retry
 
 	var parsed chatResponse
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return domain.Reply{}, false, fmt.Errorf("разбор ответа модели: %w", err)
+		// Ответ 200 с оборванным телом — сбой шлюза, а не модели: повторяем.
+		return domain.Reply{}, true, fmt.Errorf("разбор ответа модели: %w", err)
 	}
 	if parsed.Error != nil {
-		return domain.Reply{}, false, errors.New(parsed.Error.Message)
+		// Шлюзы вроде OpenRouter передают сбой провайдера ответом 200 с полем
+		// error: это временная ошибка, её стоит повторить.
+		return domain.Reply{}, true, fmt.Errorf("модель вернула ошибку: %s", parsed.Error.Message)
 	}
 	if len(parsed.Choices) == 0 {
 		return domain.Reply{}, true, errors.New("модель вернула пустой ответ")
@@ -313,6 +331,9 @@ func argumentsOrEmpty(raw json.RawMessage) json.RawMessage {
 }
 
 func (c *Client) Ping(ctx context.Context) error {
+	if c.modelProbe {
+		return c.probeModel(ctx)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models", nil)
 	if err != nil {
 		return err
