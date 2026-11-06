@@ -33,6 +33,7 @@ type Metric struct {
 	Duration *Duration `json:"duration,omitempty"`
 	Per      string    `json:"per,omitempty"`
 	Label    string    `json:"label,omitempty"`
+	Filters  []Filter  `json:"filters,omitempty"`
 	Scale    *Scale    `json:"-"`
 }
 
@@ -47,7 +48,8 @@ type TimeGroup struct {
 }
 
 type Filter struct {
-	Column string `json:"column"`
+	Column string `json:"column,omitempty"`
+	Expr   string `json:"expr,omitempty"`
 	Op     Op     `json:"op"`
 	Value  any    `json:"value,omitempty"`
 	Values []any  `json:"values,omitempty"`
@@ -69,10 +71,12 @@ const (
 	FuncMax           Func = "max"
 	FuncMedian        Func = "median"
 	FuncP90           Func = "p90"
+	FuncStddev        Func = "stddev"
 	FuncShare         Func = "share"
+	FuncCalc          Func = "calc"
 )
 
-var Funcs = []Func{FuncCount, FuncCountDistinct, FuncSum, FuncAvg, FuncMin, FuncMax, FuncMedian, FuncP90, FuncShare}
+var Funcs = []Func{FuncCount, FuncCountDistinct, FuncSum, FuncAvg, FuncMin, FuncMax, FuncMedian, FuncP90, FuncStddev, FuncShare, FuncCalc}
 
 type Grain string
 
@@ -116,6 +120,7 @@ const (
 	MaxMetrics     = 8
 	MaxGroupBy     = 3
 	MaxFilters     = 10
+	MaxMetricConds = 5
 	MaxJoins       = 2
 	MaxInValues    = 100
 	DefaultLimit   = 100
@@ -136,5 +141,5 @@ func label(s string) string {
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return strings.TrimSpace(s[:cut])
+	return strings.TrimRight(s[:cut], " ,;:–—-(")
 }

@@ -16,6 +16,8 @@ func TestInferType(t *testing.T) {
 		{"целые с разделителями", []string{"1 000", "2 500"}, domain.ColumnTypeInteger},
 		{"дробные", []string{"1.5", "2.25"}, domain.ColumnTypeNumeric},
 		{"дробные с запятой", []string{"1,5", "2,25"}, domain.ColumnTypeNumeric},
+		{"три знака после запятой и ноль целых", []string{"9,069", "0,880", "12,345"}, domain.ColumnTypeNumeric},
+		{"разделитель тысяч", []string{"1,234", "12,500"}, domain.ColumnTypeInteger},
 		{"булевы", []string{"true", "false", "да"}, domain.ColumnTypeBoolean},
 		{"даты iso", []string{"2024-01-31", "2024-02-01"}, domain.ColumnTypeDate},
 		{"даты с точками", []string{"31.01.2024", "01.02.2024"}, domain.ColumnTypeDate},
@@ -37,6 +39,9 @@ func TestInferType(t *testing.T) {
 }
 
 func TestValueParserParse(t *testing.T) {
+	if v, err := InferType([]string{"0,880", "9,069"}).Parse("9,069"); err != nil || v != 9.069 {
+		t.Fatalf("вес «9,069» — это 9,069 кг, получено %v, %v", v, err)
+	}
 	p := InferType([]string{"1,5", "2,25"})
 	v, err := p.Parse("3,75")
 	if err != nil {

@@ -68,7 +68,7 @@ func TestAgentAnalyzesWaitingTimeWithoutRawSQL(t *testing.T) {
 
 func TestAgentComparesPeriodsAndPreservesQuery(t *testing.T) {
 	model := newToolLLM(
-		calls(call("p1", toolComparePeriods, comparisonArgs)),
+		calls(call("p1", toolDistributions, comparisonArgs)),
 		calls(call("p2", toolAnswer, `{"text":"Средняя длительность снизилась с 10 до 8 часов. Наблюдаемая связь не устанавливает причину.","result_id":"r1"}`)),
 	)
 	exec := &fakeExecutor{result: comparisonStatsResult()}
@@ -157,12 +157,12 @@ func TestComparePeriodsAvailableThroughMCPAndPlanner(t *testing.T) {
 	if err != nil || answer.Intent != domain.IntentQuery || answer.Analysis != "period_comparison" {
 		t.Fatalf("JSON-план сравнения: %+v, %v", answer, err)
 	}
-	out, isError, err := svc.CallTool(context.Background(), toolComparePeriods, []byte(comparisonArgs))
+	out, isError, err := svc.CallTool(context.Background(), toolDistributions, []byte(comparisonArgs))
 	if err != nil || isError || !strings.Contains(out, "Изменение, %") {
 		t.Fatalf("MCP: %s %v %v", out, isError, err)
 	}
 	for _, invalid := range []string{strings.Replace(comparisonArgs, "started_at", "password", 1), strings.Replace(comparisonArgs, "2026-09-21", "2026-09-05", 1)} {
-		_, isError, err := svc.CallTool(context.Background(), toolComparePeriods, []byte(invalid))
+		_, isError, err := svc.CallTool(context.Background(), toolDistributions, []byte(invalid))
 		if err != nil || !isError {
 			t.Fatalf("небезопасные параметры должны отклоняться: %v %v", isError, err)
 		}
@@ -171,7 +171,7 @@ func TestComparePeriodsAvailableThroughMCPAndPlanner(t *testing.T) {
 		t.Fatalf("отклонённые параметры не должны попадать в базу: %d", len(exec.queries))
 	}
 	for _, tool := range svc.DataTools() {
-		if tool.Name == toolComparePeriods {
+		if tool.Name == toolDistributions {
 			return
 		}
 	}
@@ -183,7 +183,7 @@ func TestComparePeriodsRejectsTruncatedResults(t *testing.T) {
 	rs.Truncated = true
 	svc, _, _ := newTestAgent(t, newToolLLM(), &fakeExecutor{result: rs}, &fakeDashboards{})
 	addTaskDates(svc)
-	out, isError, err := svc.CallTool(context.Background(), toolComparePeriods, []byte(comparisonArgs))
+	out, isError, err := svc.CallTool(context.Background(), toolDistributions, []byte(comparisonArgs))
 	if err != nil || !isError || !strings.Contains(out, "усечённые") {
 		t.Fatalf("усечённые группы нельзя сравнивать: %s %v %v", out, isError, err)
 	}
@@ -191,7 +191,7 @@ func TestComparePeriodsRejectsTruncatedResults(t *testing.T) {
 
 func TestAnalyticalPolicyInAllPromptModes(t *testing.T) {
 	canary := promptguard.NewCanary()
-	for _, system := range []string{buildAgentPrompt("каталог", false, canary), buildPlannerPrompt("каталог", false, canary), buildPlannerPrompt("каталог", true, canary)} {
+	for _, system := range []string{buildAgentPrompt("каталог", false, canary, "Стали ли задачи выполнять быстрее?"), buildPlannerPrompt("каталог", false, canary), buildPlannerPrompt("каталог", true, canary)} {
 		if strings.Count(system, analyticalReasoningPolicy) != 1 || strings.Contains(system, "%!") {
 			t.Fatal("политика анализа должна передаваться во всех режимах без ошибок формата")
 		}

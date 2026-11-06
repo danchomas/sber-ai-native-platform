@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,7 +64,16 @@ type Service struct {
 	noToolChoice sync.Map
 
 	slots chan struct{}
+
+	// stepPause — пауза перед повтором шага агента, когда модель не ответила
+	// даже после повторов клиента: обрыв на шлюзе бывает дольше нескольких секунд.
+	stepPause time.Duration
 }
+
+const (
+	defaultStepPause = 3 * time.Second
+	maxReasonRunes   = 400
+)
 
 func New(
 	catalog Catalog,
@@ -77,7 +88,8 @@ func New(
 	return &Service{
 		catalog: catalog, exec: exec, sessions: sessions,
 		dashboards: dashboards, models: models, cfg: cfg, agent: agent, log: log,
-		slots: make(chan struct{}, max(agent.MaxConcurrent, 1)),
+		slots:     make(chan struct{}, max(agent.MaxConcurrent, 1)),
+		stepPause: defaultStepPause,
 	}
 }
 
@@ -197,7 +209,7 @@ func (s *Service) answer(
 		answer.Security = append(answer.Security, note)
 	}
 	if len(answer.Followups) == 0 && (answer.Intent == domain.IntentQuery || answer.Intent == domain.IntentOverview) {
-		answer.Followups = suggestQuestions(datasets)
+		answer.Followups = suggestQuestions(datasets, answer.Datasets...)
 	}
 	return answer
 }
@@ -659,27 +671,54 @@ func (s *Service) narrate(
 	return strings.TrimSpace(text)
 }
 
+// fallbackResultText — текст ответа, когда модель его не дала: числа из самой
+// таблицы читаемой фразой, без вывода, который модель не успела сделать.
 func fallbackResultText(rs *domain.ResultSet) string {
 	if rs == nil || len(rs.Rows) == 0 {
 		return "По этому вопросу в данных ничего не нашлось. Попробуйте расширить период или снять фильтры."
 	}
 	if len(rs.Rows) == 1 && len(rs.Columns) == 1 {
-		return fmt.Sprintf("%s: %s.", rs.Columns[0].Name, formatCell(rs.Rows[0][0]))
+		return fmt.Sprintf("%s: %s.", rs.Columns[0].Name, readableCell(rs.Rows[0][0]))
 	}
-
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "Получено %d строк по %d показателям.", len(rs.Rows), len(rs.Columns))
-	if len(rs.Rows) > 0 {
+	pairs := func(row []any) string {
 		cells := make([]string, 0, len(rs.Columns))
 		for i, c := range rs.Columns {
-			if i < len(rs.Rows[0]) {
-				cells = append(cells, fmt.Sprintf("%s — %s", c.Name, formatCell(rs.Rows[0][i])))
+			if i < len(row) {
+				cells = append(cells, fmt.Sprintf("%s — %s", c.Name, readableCell(row[i])))
 			}
 		}
-		fmt.Fprintf(&sb, " Первая строка: %s.", strings.Join(cells, ", "))
+		return strings.Join(cells, "; ")
 	}
-	sb.WriteString(" Результат показан в таблице и на графике.")
-	return sb.String()
+	if len(rs.Rows) == 1 {
+		return "Результат расчёта: " + pairs(rs.Rows[0]) + "."
+	}
+	return fmt.Sprintf("Результат расчёта — таблица из %d строк, она показана ниже. Первая строка: %s.",
+		len(rs.Rows), pairs(rs.Rows[0]))
+}
+
+// readableCell печатает число с разделителем тысяч и запятой, как в отчёте.
+func readableCell(v any) string {
+	n, ok := numberOf(v)
+	if !ok {
+		return formatCell(v)
+	}
+	text := strconv.FormatFloat(math.Round(n*100)/100, 'f', -1, 64)
+	sign := ""
+	if strings.HasPrefix(text, "-") {
+		sign, text = "-", text[1:]
+	}
+	whole, frac, _ := strings.Cut(text, ".")
+	var sb strings.Builder
+	for i, r := range whole {
+		if i > 0 && (len(whole)-i)%3 == 0 {
+			sb.WriteRune('\u00a0')
+		}
+		sb.WriteRune(r)
+	}
+	if frac != "" {
+		sb.WriteString("," + frac)
+	}
+	return sign + sb.String()
 }
 
 func humanReason(err error) string {
@@ -692,8 +731,10 @@ func humanReason(err error) string {
 	}
 	msg = strings.TrimPrefix(msg, apperr.ErrUnsafeQuery.Error()+": ")
 	msg = strings.TrimPrefix(msg, apperr.ErrValidation.Error()+": ")
-	if len(msg) > 300 {
-		msg = msg[:300] + "…"
+	// Предел — в символах, а не в байтах: русская буква занимает два байта,
+	// и срез по байтам резал и сообщение вдвое, и букву пополам.
+	if r := []rune(msg); len(r) > maxReasonRunes {
+		msg = string(r[:maxReasonRunes]) + "…"
 	}
 	return msg
 }

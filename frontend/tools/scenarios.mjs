@@ -24,6 +24,31 @@ const GROUPS = [
 ];
 
 const VIEW = { width: 1600, height: 1000 };
+
+// scrollToAnswerEnd ставит конец последнего ответа у нижнего края ленты.
+// false — ответ и так поместился в кадр.
+const scrollToAnswerEnd = (page) => page.evaluate(() => {
+  const scroll = document.querySelector(".chat-view.active .scroll");
+  const msgs = document.querySelectorAll(".chat-view.active .msg");
+  const last = msgs[msgs.length - 1];
+  if (!scroll || !last) return false;
+  const overflow = last.getBoundingClientRect().bottom - scroll.getBoundingClientRect().bottom + 16;
+  if (overflow <= 0) return false;
+  scroll.scrollTop += overflow;
+  return true;
+});
+
+// scrollPageEnd прокручивает до конца самую большую прокручиваемую область
+// страницы (у панели это её содержимое, а не окно).
+const scrollPageEnd = (page) => page.evaluate(() => {
+  const areas = [document.scrollingElement, ...document.querySelectorAll("*")].filter((el) => el
+    && el.scrollHeight > el.clientHeight + 40
+    && (el === document.scrollingElement || /(auto|scroll)/.test(getComputedStyle(el).overflowY)));
+  const area = areas.sort((a, b) => b.clientHeight - a.clientHeight)[0];
+  if (!area) return false;
+  area.scrollTop = area.scrollHeight;
+  return true;
+});
 const pad = (n) => String(n).padStart(2, "0");
 
 (async () => {
@@ -75,19 +100,12 @@ const pad = (n) => String(n).padStart(2, "0");
       await page.waitForTimeout(300);
       await page.screenshot({ path: path.join(OUT, `${pad(num)}.png`) });
 
-      // Полный ответ целиком.
-      await page.setViewportSize({ width: VIEW.width, height: 3200 });
-      await page.waitForTimeout(400);
-      await page.evaluate(() => {
-        const users = document.querySelectorAll(".chat-view.active .msg.user");
-        const last = users[users.length - 1];
-        const scroll = document.querySelector(".chat-view.active .scroll");
-        if (last && scroll) scroll.scrollTop += last.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 12;
-      });
-      await page.waitForTimeout(300);
-      await page.screenshot({ path: path.join(OUT, `${pad(num)}_full.png`) });
-      await page.setViewportSize(VIEW);
-      await page.waitForTimeout(200);
+      // Конец ответа — вторым кадром того же размера, а не одним высоким:
+      // окно в 3200 пикселей давало снимки 1:2, непригодные для слайдов.
+      if (await scrollToAnswerEnd(page)) {
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: path.join(OUT, `${pad(num)}_more.png`) });
+      }
 
       const res = await page.request.get(`${BASE}/api/v1/sessions/${sessionId}/messages?limit=100`);
       const body = res.ok() ? await res.json() : { messages: [] };
@@ -104,10 +122,10 @@ const pad = (n) => String(n).padStart(2, "0");
         await page.waitForLoadState("networkidle").catch(() => {});
         await page.waitForTimeout(2500);
         await page.screenshot({ path: path.join(OUT, `${pad(num)}_dashboard.png`) });
-        await page.setViewportSize({ width: VIEW.width, height: 3200 });
-        await page.waitForTimeout(800);
-        await page.screenshot({ path: path.join(OUT, `${pad(num)}_dashboard_full.png`) });
-        await page.setViewportSize(VIEW);
+        if (await scrollPageEnd(page)) {
+          await page.waitForTimeout(500);
+          await page.screenshot({ path: path.join(OUT, `${pad(num)}_dashboard_more.png`) });
+        }
         await page.locator(".nav button", { hasText: "Чат" }).click();
         await page.waitForTimeout(400);
       }

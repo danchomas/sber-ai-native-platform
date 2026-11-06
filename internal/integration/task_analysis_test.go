@@ -71,9 +71,9 @@ func TestTaskDurationsAndPeriodComparisonOnPostgres(t *testing.T) {
 	}
 	svc := chatsvc.New(e.datasets, e.raw, e.sessions, nil, nil, queryCfg, config.Agent{MaxSteps: 6}, testLogger())
 	args, _ := json.Marshal(comparison)
-	out, isError, err := svc.CallTool(ctx, "compare_periods", args)
+	out, isError, err := svc.CallTool(ctx, "compare_distributions", args)
 	if err != nil || isError {
-		t.Fatalf("compare_periods: %s %v %v", out, isError, err)
+		t.Fatalf("compare_distributions: %s %v %v", out, isError, err)
 	}
 	var payload struct {
 		Columns  []string `json:"columns"`
@@ -116,7 +116,7 @@ func TestTaskDurationsAndPeriodComparisonOnPostgres(t *testing.T) {
 	upload(t, e, "complete_tasks", body.String())
 	comparison.Dataset, comparison.GroupBy, comparison.ObservedUntil, comparison.FollowupHours = "complete_tasks", []string{"team"}, "2026-10-10", 168
 	args, _ = json.Marshal(comparison)
-	out, isError, err = svc.CallTool(ctx, "compare_periods", args)
+	out, isError, err = svc.CallTool(ctx, "compare_distributions", args)
 	if err != nil || isError {
 		t.Fatalf("полные когорты: %s %v %v", out, isError, err)
 	}

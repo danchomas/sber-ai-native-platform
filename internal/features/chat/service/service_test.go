@@ -60,6 +60,7 @@ func newTestAgentWith(t *testing.T, cfg config.Agent, model domain.LLM, exec Exe
 	}
 
 	svc := New(newFakeCatalog(), exec, sessions, dashboards, fixedModel{model}, testQueryConfig(), cfg, testLogger())
+	svc.stepPause = 0
 	return svc, session.ID, sessions
 }
 

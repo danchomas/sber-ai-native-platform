@@ -1,9 +1,12 @@
 package analytics
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/heinousness/aibi/internal/core/domain"
 )
 
 const (
@@ -11,7 +14,19 @@ const (
 	maxExprDepth = 8
 )
 
-const exprRules = "в формуле допустимы только числовые колонки, числа, операции + - * / и скобки"
+const exprRules = "в формуле допустимы числовые колонки, числа, операции + - * / и скобки, " +
+	"а также разность двух колонок с датами — длительность в часах"
+
+const calcRules = "в расчёте по итогам колонки стоят внутри sum(), avg(), min(), max(), count() или count_distinct(), " +
+	"например (sum(\"Выручка\") - sum(\"Расходы\")) / sum(\"Расходы\") * 100"
+
+var exprAggregates = map[string]string{
+	"sum": "sum(%s)", "avg": "avg(%s)", "min": "min(%s)", "max": "max(%s)",
+	"count": "count(%s)", "count_distinct": "count(DISTINCT %s)",
+}
+
+const exprDateRule = "с датами в формуле допустима только разность двух колонок: " +
+	"«Завершено» - «Начало» даёт длительность в часах, в днях — поделите её на 24"
 
 type exprToken struct {
 	kind  byte
@@ -82,25 +97,58 @@ type exprParser struct {
 	pos    int
 	scale  *Scale
 	scaled bool
+
+	// Режим расчёта по итогам: формула из агрегатов, условие метрики
+	// навешивается на каждый агрегат.
+	calc        bool
+	cond        metricCond
+	inAggregate bool
+	aggregates  int
+}
+
+type exprValue struct {
+	sql      string
+	temporal bool
 }
 
 func (c *compiler) compileExpr(src string, scale *Scale) (string, error) {
+	return c.parseExpr(&exprParser{c: c, scale: scale}, src)
+}
+
+// compileCalc собирает показатель из итогов: отношение сумм, разность средних.
+// Колонки вне агрегата запрещены — у итоговой строки нет «значения колонки».
+func (c *compiler) compileCalc(src string, cond metricCond) (string, error) {
+	p := &exprParser{c: c, calc: true, cond: cond}
+	sql, err := c.parseExpr(p, src)
+	if err != nil {
+		return "", err
+	}
+	if p.aggregates == 0 {
+		return "", invalid("в расчёте по итогам нет ни одной функции: %s", calcRules)
+	}
+	return sql, nil
+}
+
+func (c *compiler) parseExpr(p *exprParser, src string) (string, error) {
 	tokens, err := tokenizeExpr(src)
 	if err != nil {
 		return "", err
 	}
-	p := &exprParser{c: c, tokens: tokens, scale: scale}
-	sql, err := p.sum(0)
+	p.tokens = tokens
+	v, err := p.sum(0)
 	if err != nil {
 		return "", err
 	}
 	if p.pos != len(p.tokens) {
 		return "", invalid("лишнее в конце формулы: %s", exprRules)
 	}
-	if scale != nil && !p.scaled {
-		return "", invalid("показатель не зависит от колонки %q: добавьте её в формулу", scale.Column)
+	if v.temporal {
+		return "", invalid("дата не может быть показателем: %s", exprDateRule)
 	}
-	return sql, nil
+	if p.scale != nil && !p.scaled {
+		return "", invalid("показатель не зависит от колонки %q: добавьте её в формулу", p.scale.Column)
+	}
+	return v.sql, nil
 }
 
 func (p *exprParser) peekOp(ops string) (string, bool) {
@@ -110,10 +158,10 @@ func (p *exprParser) peekOp(ops string) (string, bool) {
 	return "", false
 }
 
-func (p *exprParser) sum(depth int) (string, error) {
+func (p *exprParser) sum(depth int) (exprValue, error) {
 	left, err := p.product(depth)
 	if err != nil {
-		return "", err
+		return exprValue{}, err
 	}
 	for {
 		op, ok := p.peekOp("+-")
@@ -123,16 +171,23 @@ func (p *exprParser) sum(depth int) (string, error) {
 		p.pos++
 		right, err := p.product(depth)
 		if err != nil {
-			return "", err
+			return exprValue{}, err
 		}
-		left = "(" + left + " " + op + " " + right + ")"
+		switch {
+		case left.temporal && right.temporal && op == "-":
+			left = exprValue{sql: "(date_part('epoch', " + left.sql + " - " + right.sql + ") / 3600)::numeric"}
+		case left.temporal || right.temporal:
+			return exprValue{}, invalid("%s", exprDateRule)
+		default:
+			left = exprValue{sql: "(" + left.sql + " " + op + " " + right.sql + ")"}
+		}
 	}
 }
 
-func (p *exprParser) product(depth int) (string, error) {
+func (p *exprParser) product(depth int) (exprValue, error) {
 	left, err := p.unary(depth)
 	if err != nil {
-		return "", err
+		return exprValue{}, err
 	}
 	for {
 		op, ok := p.peekOp("*/")
@@ -142,77 +197,160 @@ func (p *exprParser) product(depth int) (string, error) {
 		p.pos++
 		right, err := p.unary(depth)
 		if err != nil {
-			return "", err
+			return exprValue{}, err
+		}
+		if left.temporal || right.temporal {
+			return exprValue{}, invalid("%s", exprDateRule)
 		}
 		if op == "/" {
-			right = "NULLIF(" + right + ", 0)"
+			right.sql = "NULLIF(" + right.sql + ", 0)"
 		}
-		left = "(" + left + " " + op + " " + right + ")"
+		left = exprValue{sql: "(" + left.sql + " " + op + " " + right.sql + ")"}
 	}
 }
 
-func (p *exprParser) unary(depth int) (string, error) {
+func (p *exprParser) unary(depth int) (exprValue, error) {
 	if _, ok := p.peekOp("-"); ok {
 		p.pos++
 		value, err := p.unary(depth)
 		if err != nil {
-			return "", err
+			return exprValue{}, err
 		}
-		return "(-" + value + ")", nil
+		if value.temporal {
+			return exprValue{}, invalid("%s", exprDateRule)
+		}
+		return exprValue{sql: "(-" + value.sql + ")"}, nil
 	}
 	return p.atom(depth)
 }
 
-func (p *exprParser) atom(depth int) (string, error) {
+func (p *exprParser) atom(depth int) (exprValue, error) {
 	if p.pos >= len(p.tokens) {
-		return "", invalid("формула обрывается: %s", exprRules)
+		return exprValue{}, invalid("формула обрывается: %s", exprRules)
 	}
 	tok := p.tokens[p.pos]
 	p.pos++
 	switch {
 	case tok.kind == exprOp && tok.value == "(":
 		if depth >= maxExprDepth {
-			return "", invalid("в формуле больше %d уровней скобок", maxExprDepth)
+			return exprValue{}, invalid("в формуле больше %d уровней скобок", maxExprDepth)
 		}
 		inner, err := p.sum(depth + 1)
 		if err != nil {
-			return "", err
+			return exprValue{}, err
 		}
 		if _, ok := p.peekOp(")"); !ok {
-			return "", invalid("в формуле не закрыта скобка: %s", exprRules)
+			return exprValue{}, invalid("в формуле не закрыта скобка: %s", exprRules)
 		}
 		p.pos++
 		return inner, nil
 	case tok.kind == exprNumber:
 		v, err := strconv.ParseFloat(tok.value, 64)
 		if err != nil {
-			return "", invalid("число %q: %s", tok.value, exprRules)
+			return exprValue{}, invalid("число %q: %s", tok.value, exprRules)
 		}
-		return strconv.FormatFloat(v, 'f', -1, 64), nil
+		return exprValue{sql: strconv.FormatFloat(v, 'f', -1, 64)}, nil
 	case tok.kind == exprColumn:
+		if _, open := p.peekOp("("); open {
+			if pattern, ok := exprAggregates[strings.ToLower(tok.value)]; ok {
+				return p.aggregate(pattern, depth)
+			}
+		}
+		if p.calc && !p.inAggregate {
+			return exprValue{}, invalid("колонка %q вне функции: %s", tok.value, calcRules)
+		}
 		return p.columnRef(tok.value)
 	}
-	return "", invalid("неожиданное %q: %s", tok.value, exprRules)
+	return exprValue{}, invalid("неожиданное %q: %s", tok.value, exprRules)
 }
 
-func (p *exprParser) columnRef(name string) (string, error) {
+func (p *exprParser) aggregate(pattern string, depth int) (exprValue, error) {
+	switch {
+	case !p.calc:
+		return exprValue{}, invalid("функции sum(), avg() и другие допустимы только в метрике с fn calc: %s", calcRules)
+	case p.inAggregate:
+		return exprValue{}, invalid("функции нельзя вкладывать друг в друга: %s", calcRules)
+	case depth >= maxExprDepth:
+		return exprValue{}, invalid("в формуле больше %d уровней скобок", maxExprDepth)
+	}
+	p.pos++
+	p.aggregates++
+	if _, closed := p.peekOp(")"); closed && pattern == "count(%s)" {
+		p.pos++
+		return exprValue{sql: p.cond.apply("count(*)")}, nil
+	}
+	if p.pos+1 < len(p.tokens) && p.tokens[p.pos].value == "*" && p.tokens[p.pos+1].value == ")" && pattern == "count(%s)" {
+		p.pos += 2
+		return exprValue{sql: p.cond.apply("count(*)")}, nil
+	}
+	p.inAggregate = true
+	inner, err := p.sum(depth + 1)
+	p.inAggregate = false
+	if err != nil {
+		return exprValue{}, err
+	}
+	if inner.temporal {
+		return exprValue{}, invalid("дату нельзя складывать или усреднять: %s", exprDateRule)
+	}
+	if _, ok := p.peekOp(")"); !ok {
+		return exprValue{}, invalid("в формуле не закрыта скобка функции: %s", calcRules)
+	}
+	p.pos++
+	return exprValue{sql: p.cond.apply(fmt.Sprintf(pattern, inner.sql))}, nil
+}
+
+func (p *exprParser) columnRef(name string) (exprValue, error) {
 	bt, col, err := p.c.column(name)
 	if err != nil {
-		return "", err
+		return exprValue{}, err
 	}
-	if !col.Type.IsNumeric() {
-		return "", invalid("колонка «%s» типа %s не числовая: %s", title(col), col.Type, exprRules)
+	switch {
+	case col.Type == domain.ColumnTypeDate:
+		return exprValue{sql: qualify(bt.alias, col.Name) + "::timestamp", temporal: true}, nil
+	case col.Type.IsTemporal():
+		return exprValue{sql: qualify(bt.alias, col.Name), temporal: true}, nil
+	case !col.Type.IsNumeric():
+		return exprValue{}, invalid("колонка «%s» типа %s не числовая: %s", title(col), col.Type, exprRules)
 	}
 	ref := qualify(bt.alias, col.Name) + "::numeric"
 	if p.scale != nil {
 		_, target, err := p.c.column(p.scale.Column)
 		if err != nil {
-			return "", err
+			return exprValue{}, err
 		}
 		if target.Name == col.Name {
 			p.scaled = true
-			return "(" + ref + " * " + strconv.FormatFloat(p.scale.Factor, 'f', -1, 64) + ")", nil
+			return exprValue{sql: "(" + ref + " * " + strconv.FormatFloat(p.scale.Factor, 'f', -1, 64) + ")"}, nil
 		}
 	}
-	return ref, nil
+	return exprValue{sql: ref}, nil
+}
+
+func (c *compiler) exprUsesDates(src string) bool {
+	tokens, err := tokenizeExpr(src)
+	if err != nil {
+		return false
+	}
+	for _, tok := range tokens {
+		if tok.kind != exprColumn {
+			continue
+		}
+		if _, col, err := c.column(tok.value); err == nil && col.Type.IsTemporal() {
+			return true
+		}
+	}
+	return false
+}
+
+// IsDuration сообщает, что формула метрики — длительность между датами:
+// у таких метрик значение известно не у всех строк, и полноту надо проверять.
+func IsDuration(m Metric, cat Catalog, dataset string) bool {
+	if strings.TrimSpace(m.Expr) == "" || strings.EqualFold(string(m.Func), string(FuncCalc)) {
+		return false
+	}
+	c := &compiler{cat: cat}
+	if err := c.bind(dataset, nil); err != nil {
+		return false
+	}
+	return c.exprUsesDates(m.Expr)
 }

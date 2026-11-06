@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,10 +29,43 @@ func NewOpenRouter(c config.LLM) *Client {
 	if c.BaseURL == "" {
 		c.BaseURL = OpenRouterBaseURL
 	}
-	return New(c).WithoutReasoning().WithProviders(c.Providers).WithHeaders(map[string]string{
+	client := New(c).WithoutReasoning().WithProviders(c.Providers).WithHeaders(map[string]string{
 		headerReferer: appURL,
 		headerTitle:   appTitle,
 	})
+	client.modelProbe = true
+	return client
+}
+
+// probeModel проверяет модель запросом /models/{автор}/{модель}/endpoints:
+// десятки килобайт вместо списка всех моделей, а несуществующая модель
+// получает 404. Вариант после двоеточия («:free») — та же модель.
+func (c *Client) probeModel(ctx context.Context) error {
+	id, _, _ := strings.Cut(c.model, ":")
+	parts := strings.Split(id, "/")
+	for i, p := range parts {
+		parts[i] = url.PathEscape(p)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/models/"+strings.Join(parts, "/")+"/endpoints", nil)
+	if err != nil {
+		return err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", apperr.ErrLLMUnavailable, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return fmt.Errorf("%w: модели %q нет на сервере", apperr.ErrLLMUnavailable, c.model)
+	}
+	return fmt.Errorf("%w: %s", apperr.ErrLLMUnavailable, resp.Status)
 }
 
 func IsOpenRouter(baseURL string) bool {

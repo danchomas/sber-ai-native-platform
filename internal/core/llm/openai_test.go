@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/heinousness/aibi/internal/core/apperr"
 	"github.com/heinousness/aibi/internal/core/config"
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -123,6 +125,42 @@ func TestOpenRouterSendsProviderOrder(t *testing.T) {
 	}
 }
 
+func TestOpenRouterPingProbesOneModel(t *testing.T) {
+	tests := []struct {
+		name, model string
+		wantErr     bool
+	}{
+		{"модель есть", "qwen/qwen3.8-27b", false},
+		{"вариант модели", "qwen/qwen3.8-27b:free", false},
+		{"модели нет", "qwen/none", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var paths []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path != "/models/qwen/qwen3.8-27b/endpoints" {
+					http.NotFound(w, r)
+					return
+				}
+				_, _ = io.WriteString(w, `{"data":{"id":"qwen/qwen3.8-27b"}}`)
+			}))
+			defer srv.Close()
+
+			err := NewOpenRouter(config.LLM{BaseURL: srv.URL, Model: tt.model, Timeout: 5 * time.Second}).Ping(context.Background())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Ping: %v, ожидалась ошибка: %v", err, tt.wantErr)
+			}
+			if tt.wantErr && (!errors.Is(err, apperr.ErrLLMUnavailable) || !strings.Contains(err.Error(), tt.model)) {
+				t.Fatalf("ошибка должна называть модель: %v", err)
+			}
+			if slices.Contains(paths, "/models") {
+				t.Fatalf("полный список моделей запрашиваться не должен: %v", paths)
+			}
+		})
+	}
+}
+
 func TestFallbackPlansOverviewAndWritesNoText(t *testing.T) {
 	plan, err := NewFallback().Complete(context.Background(), domain.Completion{JSONOnly: true})
 	if err != nil || !strings.Contains(plan, `"intent":"overview"`) {
@@ -130,5 +168,59 @@ func TestFallbackPlansOverviewAndWritesNoText(t *testing.T) {
 	}
 	if text, err := NewFallback().Complete(context.Background(), domain.Completion{}); err == nil {
 		t.Fatalf("текст ответа не должен приходить от заглушки: %q", text)
+	}
+}
+
+func TestRetriesProviderErrorInBody(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = io.WriteString(w, `{"error":{"message":"unexpected EOF","type":"provider_error"}}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"готово"}}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(config.LLM{BaseURL: srv.URL, Model: "m", Retries: 1, Timeout: 5 * time.Second})
+	got, err := c.Complete(context.Background(), domain.Completion{Messages: []domain.ChatMessage{{Role: domain.RoleUser, Content: "?"}}})
+	if err != nil || got != "готово" || calls != 2 {
+		t.Fatalf("сбой провайдера в теле ответа должен повторяться: %q, %v, обращений %d", got, err, calls)
+	}
+}
+
+func TestRetriesTruncatedBody(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"обо`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"готово"}}]}`)
+	}))
+	defer srv.Close()
+
+	c := New(config.LLM{BaseURL: srv.URL, Model: "m", Retries: 1, Timeout: 5 * time.Second})
+	got, err := c.Complete(context.Background(), domain.Completion{Messages: []domain.ChatMessage{{Role: domain.RoleUser, Content: "?"}}})
+	if err != nil || got != "готово" || calls != 2 {
+		t.Fatalf("оборванное тело ответа должно повторяться: %q, %v, обращений %d", got, err, calls)
+	}
+}
+
+func TestReasoningOnlyWhenAsked(t *testing.T) {
+	c := New(config.LLM{BaseURL: "http://x", Model: "m", MaxTokens: 2048}).WithoutReasoning()
+	plain := c.buildRequest(domain.Completion{})
+	if plain.Reasoning == nil || plain.Reasoning.Enabled || plain.MaxTokens != 2048 {
+		t.Fatalf("по умолчанию рассуждение выключено: %+v", plain.Reasoning)
+	}
+	asked := c.buildRequest(domain.Completion{Reasoning: true})
+	if asked.Reasoning == nil || !asked.Reasoning.Enabled || asked.MaxTokens < reasoningMaxTokens {
+		t.Fatalf("по просьбе рассуждение включается с запасом токенов: %+v, %d", asked.Reasoning, asked.MaxTokens)
+	}
+	local := New(config.LLM{BaseURL: "http://x", Model: "m"}).buildRequest(domain.Completion{Reasoning: true})
+	if local.Reasoning != nil {
+		t.Fatal("клиенту без управления рассуждением поле не передаётся")
 	}
 }

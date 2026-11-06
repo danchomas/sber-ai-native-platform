@@ -199,19 +199,26 @@ func isFloat(s string, decimalComma bool) bool {
 	return err == nil
 }
 
+// decimalCommaStyle решает, десятичная ли запятая в колонке. Три цифры после
+// запятой сами по себе неоднозначны: «9,069» — и 9 069, и 9,069. Запятая
+// считается десятичной, если хотя бы одно значение однозначно: после запятой
+// не три цифры («1,5») или целая часть нулевая («0,880» не бывает записью тысяч).
 func decimalCommaStyle(values []string) bool {
-	found := false
+	decimal := false
 	for _, v := range values {
 		if !strings.Contains(v, ",") {
 			continue
 		}
 		parts := strings.Split(v, ",")
-		if len(parts) != 2 || !allDigits(parts[1]) || len(parts[1]) == 3 {
+		if len(parts) != 2 || !allDigits(parts[1]) {
 			return false
 		}
-		found = true
+		whole := strings.TrimLeft(parts[0], "+-")
+		if len(parts[1]) != 3 || whole == "" || whole == "0" {
+			decimal = true
+		}
 	}
-	return found
+	return decimal
 }
 
 func allDigits(s string) bool {

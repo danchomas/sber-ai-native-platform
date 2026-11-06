@@ -3,7 +3,10 @@ package chart
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -145,7 +148,7 @@ func Normalize(spec *domain.ChartSpec, rs *domain.ResultSet, title string) domai
 	if out.X != "" && rs.ColumnIndex(out.X) < 0 {
 		out.X = fallback.X
 	}
-	if out.Series != "" && rs.ColumnIndex(out.Series) < 0 {
+	if out.Series != "" && !validSeries(out, rs) {
 		out.Series = ""
 	}
 	y := make([]string, 0, len(out.Y))
@@ -213,5 +216,17 @@ func humanize(name string) string {
 	if s == "" {
 		return name
 	}
-	return strings.ToUpper(s[:1]) + s[1:]
+	first, size := utf8.DecodeRuneInString(s)
+	return string(unicode.ToUpper(first)) + s[size:]
+}
+
+// validSeries проверяет разбивку на серии: это существующая нечисловая колонка,
+// не совпадающая с осью X и показателями. Числовая колонка в роли серии
+// превращает каждое значение в отдельную серию, и легенда показывает числа.
+func validSeries(spec domain.ChartSpec, rs *domain.ResultSet) bool {
+	idx := rs.ColumnIndex(spec.Series)
+	if idx < 0 || rs.Columns[idx].Type.IsNumeric() || spec.Series == spec.X {
+		return false
+	}
+	return !slices.Contains(spec.Y, spec.Series)
 }

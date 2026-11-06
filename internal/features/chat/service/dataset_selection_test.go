@@ -14,8 +14,8 @@ import (
 func TestDatasetSelectionPolicyInPrompts(t *testing.T) {
 	canary := promptguard.NewCanary()
 	for name, system := range map[string]string{
-		"tools":     buildAgentPrompt("каталог", false, canary),
-		"tools SQL": buildAgentPrompt("каталог", true, canary),
+		"tools":     buildAgentPrompt("каталог", false, canary, ""),
+		"tools SQL": buildAgentPrompt("каталог", true, canary, ""),
 		"JSON":      buildPlannerPrompt("каталог", false, canary),
 		"JSON SQL":  buildPlannerPrompt("каталог", true, canary),
 	} {

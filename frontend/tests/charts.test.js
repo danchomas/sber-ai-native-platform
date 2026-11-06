@@ -43,6 +43,20 @@ describe("движок визуализаций", () => {
     expect(node.querySelectorAll("path").length).toBeGreaterThan(0);
   });
 
+  it("неполный последний период рисует пунктиром и подписывает", () => {
+    const rs = resultSet(
+      [{ name: "Неделя", type: "date" }, { name: "Длительность, ч", type: "double precision" }],
+      [["2026-09-14", 44.3], ["2026-09-21", 35.7], ["2026-09-28", 18.8]],
+    );
+    const spec = { type: "line", x: "Неделя", y: ["Длительность, ч"] };
+    const plain = render(spec, rs, { height: 260 });
+    expect(plain.querySelector("path.partial")).toBeNull();
+
+    const node = render({ ...spec, partial_last: true }, rs, { height: 260 });
+    expect(node.querySelector("path.partial")?.getAttribute("stroke-dasharray")).toBe("5 5");
+    expect(node.textContent).toContain("неполный");
+  });
+
   it("единственное число показывает как показатель", () => {
     const rs = resultSet([{ name: "Выручка", type: "double precision" }], [[1234567]]);
     const node = render({ type: "kpi", y: ["Выручка"] }, rs, {});
@@ -111,6 +125,22 @@ describe("движок визуализаций", () => {
     const order = ["4 кв. 2024", "1 кв. 2025", "2 кв. 2025", "1 кв. 2026"].map((l) => axis.indexOf(l));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("под наклонные подписи оси добавляет высоту, не сжимая область графика", () => {
+    const columns = [
+      { name: "Значение", type: "text" },
+      { name: "А", type: "double precision" },
+      { name: "Б", type: "double precision" },
+    ];
+    const short = resultSet(columns, [["prod", 6, 8], ["test", 7, 15]]);
+    const long = resultSet(columns, Array.from({ length: 12 }, (_, i) =>
+      [`Хранилище данных ${i}`, 6, 8]));
+    const viewHeight = (rs) => Number(render({ type: "bar", x: "Значение", y: ["А", "Б"] }, rs, { height: 260 })
+      .querySelector("svg").getAttribute("viewBox").split(" ")[3]);
+
+    expect(viewHeight(short)).toBe(260);
+    expect(viewHeight(long)).toBeGreaterThan(260);
   });
 
   it("к любому графику прикладывает таблицу", () => {

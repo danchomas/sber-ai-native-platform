@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/heinousness/aibi/internal/core/domain"
 )
@@ -32,6 +33,9 @@ type output struct {
 	label  string
 	column string
 	isDim  bool
+	// sortExpr — чем упорядочивать вместо самой колонки результата: у диапазонов
+	// подписи текстовые, а порядок нужен числовой.
+	sortExpr string
 }
 
 type compiler struct {
@@ -63,14 +67,21 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 		}
 		outs = append(outs, out)
 	}
+	binnedOrder := ""
 	for _, ref := range q.GroupBy {
 		bt, col, err := c.column(ref)
 		if err != nil {
 			return nil, err
 		}
-		outs = append(outs, output{
-			expr: qualify(bt.alias, col.Name), label: title(col), column: col.Name, isDim: true,
-		})
+		expr, sortExpr := qualify(bt.alias, col.Name), ""
+		if edges := numericBins(col); edges != nil {
+			sortExpr = "min(" + expr + ")"
+			if binnedOrder == "" && len(outs) == 0 {
+				binnedOrder = sortExpr
+			}
+			expr = binExpr(expr, edges)
+		}
+		outs = append(outs, output{expr: expr, label: title(col), column: col.Name, isDim: true, sortExpr: sortExpr})
 	}
 	dims := len(outs)
 	rawDims := make([]string, dims)
@@ -143,6 +154,9 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 	if err != nil {
 		return nil, err
 	}
+	if binnedOrder != "" && (q.Sort == nil || strings.TrimSpace(q.Sort.By) == "") {
+		order = binnedOrder
+	}
 	if c.subtotals {
 		parts := make([]string, 0, 2*dims)
 		for _, d := range rawDims {
@@ -158,6 +172,78 @@ func Compile(q Query, cat Catalog, maxRows int) (*Compiled, error) {
 		fmt.Fprintf(&sb, " LIMIT %d", clampLimit(q.Limit, DefaultLimit, maxRows))
 	}
 	return c.result(sb.String()), nil
+}
+
+// Подписи колонок запроса покрытия.
+const (
+	CoverageTotal = "Строк"
+	CoverageKnown = "Строк с длительностью"
+)
+
+// CompileCoverage собирает запрос к тем же группам, что и q, и для первой
+// метрики-длительности считает, у скольких строк она известна. Записи без
+// даты окончания в среднее не входят, и если таких в группе много, среднее
+// по ней смещено: долгие записи к концу выгрузки ещё не завершились.
+// Второе значение false, если длительностей среди метрик нет.
+func CompileCoverage(q Query, cat Catalog, maxRows int) (*Compiled, bool, error) {
+	c := &compiler{cat: cat}
+	if err := c.bind(q.Dataset, q.Join); err != nil {
+		return nil, false, err
+	}
+	for _, m := range q.Metrics {
+		if strings.TrimSpace(m.Expr) == "" || strings.EqualFold(string(m.Func), string(FuncCalc)) || !c.exprUsesDates(m.Expr) {
+			continue
+		}
+		coverage := Query{
+			Dataset: q.Dataset, Join: q.Join, GroupBy: q.GroupBy, Time: q.Time,
+			Filters: q.Filters, Limit: q.Limit,
+			Metrics: []Metric{
+				{Func: FuncCount, Label: CoverageTotal, Filters: m.Filters},
+				{Func: FuncCount, Expr: m.Expr, Label: CoverageKnown, Filters: m.Filters},
+			},
+		}
+		compiled, err := Compile(coverage, cat, maxRows)
+		if err != nil {
+			return nil, false, err
+		}
+		return compiled, true, nil
+	}
+	return nil, false, nil
+}
+
+// Подписи колонок запроса CompileRateCounts.
+const (
+	RateKnown  = "Строк с известным исходом"
+	RateEvents = "Строк с событием"
+)
+
+// CompileRateCounts собирает к запросу с частотой события (share с условием
+// без колонки) количества, из которых она посчитана: строки с известным
+// исходом и строки с событием в каждой группе. По ним видно, отличаются ли
+// группы сильнее случайного разброса. Возвращает подпись метрики.
+func CompileRateCounts(q Query, cat Catalog, maxRows int) (*Compiled, string, bool, error) {
+	if q.Time != nil || len(q.GroupBy) == 0 || q.Subtotals {
+		return nil, "", false, nil
+	}
+	for _, m := range q.Metrics {
+		if !strings.EqualFold(string(m.Func), string(FuncShare)) || len(m.Filters) == 0 ||
+			strings.TrimSpace(m.Column) != "" || strings.TrimSpace(m.Expr) != "" {
+			continue
+		}
+		counts := Query{
+			Dataset: q.Dataset, Join: q.Join, GroupBy: q.GroupBy, Filters: q.Filters,
+			Metrics: []Metric{
+				{Func: FuncCount, Label: RateKnown, Filters: KnownFilters(m.Filters)},
+				{Func: FuncCount, Label: RateEvents, Filters: m.Filters},
+			},
+		}
+		compiled, err := Compile(counts, cat, maxRows)
+		if err != nil {
+			return nil, "", false, err
+		}
+		return compiled, orLabel(m.Label, "Доля строк с условием, %"), true, nil
+	}
+	return nil, "", false, nil
 }
 
 type RowsQuery struct {
@@ -383,10 +469,14 @@ func (c *compiler) column(ref string) (boundTable, domain.Column, error) {
 		}
 	}
 
+	loose := looseName(name)
 	matchers := []func(domain.Column) bool{
 		func(col domain.Column) bool { return col.Name == name },
 		func(col domain.Column) bool { return strings.EqualFold(col.Name, name) },
 		func(col domain.Column) bool { return strings.EqualFold(col.SourceName, name) },
+		func(col domain.Column) bool {
+			return loose != "" && (looseName(col.SourceName) == loose || looseName(col.Name) == loose)
+		},
 	}
 	for _, match := range matchers {
 		var (
@@ -413,7 +503,23 @@ func (c *compiler) column(ref string) (boundTable, domain.Column, error) {
 				"колонка %q есть в нескольких датасетах, укажите её как «датасет.колонка»", ref)
 		}
 	}
-	return boundTable{}, domain.Column{}, invalid("колонки %q нет в датасете «%s»", ref, c.tables[0].ds.Name)
+	return boundTable{}, domain.Column{}, invalid("колонки %q нет в датасете «%s»%s",
+		ref, c.tables[0].ds.Name, similarHint(c.tables[0].ds, name))
+}
+
+// looseName сравнивает названия без регистра, пунктуации и «ё»: модели пишут
+// «плановые трудозатраты ч» вместо «Плановые трудозатраты, ч».
+func looseName(s string) string {
+	var sb strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r == 'ё':
+			sb.WriteRune('е')
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 func (c *compiler) timeOutput(tg TimeGroup) (output, error) {
@@ -452,7 +558,11 @@ func (c *compiler) timeOutput(tg TimeGroup) (output, error) {
 }
 
 func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
-	out, err := c.baseMetric(m, grouped)
+	cond, err := c.metricCondition(m)
+	if err != nil {
+		return output{}, err
+	}
+	out, err := c.baseMetric(m, grouped, cond)
 	if err != nil || strings.TrimSpace(m.Per) == "" {
 		return out, err
 	}
@@ -464,14 +574,49 @@ func (c *compiler) metricOutput(m Metric, grouped bool) (output, error) {
 	if err != nil {
 		return output{}, err
 	}
-	out.expr = "round((" + out.expr + ")::numeric / NULLIF(count(DISTINCT " + qualify(bt.alias, col.Name) + "), 0), 2)"
+	out.expr = "round((" + out.expr + ")::numeric / NULLIF(" + cond.apply("count(DISTINCT "+qualify(bt.alias, col.Name)+")") + ", 0), 2)"
 	out.column = ""
 	return out, nil
 }
 
-func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
+// metricCond — условие отбора строк для одной метрики: агрегат
+// получает FILTER (WHERE …), остальные метрики запроса считаются по всем строкам.
+type metricCond string
+
+func (c metricCond) apply(aggregate string) string {
+	if c == "" {
+		return aggregate
+	}
+	return "(" + aggregate + " FILTER (WHERE " + string(c) + "))"
+}
+
+func (c *compiler) metricCondition(m Metric) (metricCond, error) {
+	if len(m.Filters) == 0 {
+		return "", nil
+	}
+	if len(m.Filters) > MaxMetricConds {
+		return "", invalid("условий у одной метрики не больше %d", MaxMetricConds)
+	}
+	conds, err := c.where(m.Filters)
+	if err != nil {
+		return "", err
+	}
+	return metricCond(strings.Join(conds, " AND ")), nil
+}
+
+func (c *compiler) baseMetric(m Metric, grouped bool, cond metricCond) (output, error) {
 	fn := Func(strings.ToLower(strings.TrimSpace(string(m.Func))))
 
+	if fn == FuncCalc {
+		if strings.TrimSpace(m.Expr) == "" {
+			return output{}, invalid("для calc нужна формула expr: %s", calcRules)
+		}
+		value, err := c.compileCalc(m.Expr, cond)
+		if err != nil {
+			return output{}, err
+		}
+		return output{expr: "round((" + value + ")::numeric, 2)", label: orLabel(m.Label, "Показатель")}, nil
+	}
 	if m.Duration != nil {
 		if m.Column != "" || m.Expr != "" || m.Per != "" || m.Scale != nil {
 			return output{}, invalid("duration нельзя совмещать с column, expr, per или scale")
@@ -480,26 +625,39 @@ func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 		if err != nil {
 			return output{}, err
 		}
-		return c.valueMetric(m, fn, grouped, value)
+		return c.valueMetric(m, fn, grouped, cond, value)
 	}
 	if strings.TrimSpace(m.Expr) != "" {
-		return c.exprMetric(m, fn, grouped)
+		return c.exprMetric(m, fn, grouped, cond)
 	}
 	if fn == FuncCount && m.Column == "" {
-		return output{expr: "count(*)", label: orLabel(m.Label, "Количество")}, nil
+		return output{expr: cond.apply("count(*)"), label: orLabel(m.Label, "Количество")}, nil
 	}
 	if fn == FuncShare {
-		if !grouped {
-			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time")
-		}
+		var numeric, numericName string
 		if m.Column != "" {
 			bt, col, err := c.column(m.Column)
 			if err != nil {
 				return output{}, err
 			}
 			if col.Type.IsNumeric() {
-				return output{expr: c.shareOf(qualify(bt.alias, col.Name) + "::numeric"), label: orLabel(m.Label, "Доля «"+title(col)+"», %")}, nil
+				numeric, numericName = qualify(bt.alias, col.Name)+"::numeric", title(col)
 			}
+		}
+		known, err := c.knownCondition(m)
+		if err != nil {
+			return output{}, err
+		}
+		switch {
+		case cond != "" && numeric != "":
+			return output{expr: rateOf("sum("+numeric+")", cond, known), label: orLabel(m.Label, "Доля суммы с условием, %")}, nil
+		case cond != "":
+			return output{expr: rateOf("count(*)", cond, known), label: orLabel(m.Label, "Доля строк с условием, %")}, nil
+		case !grouped:
+			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time, " +
+				"а долю строк с условием задайте через filters метрики")
+		case numeric != "":
+			return output{expr: c.shareOf(numeric), label: orLabel(m.Label, "Доля «"+numericName+"», %")}, nil
 		}
 		return output{
 			expr:  "round(100.0 * count(*) / NULLIF(" + c.windowTotal("count(*)") + " OVER (), 0), 2)",
@@ -519,19 +677,19 @@ func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 
 	switch fn {
 	case FuncCount:
-		return output{expr: "count(" + ref + ")", label: orLabel(m.Label, "Заполнено «"+name+"»"), column: col.Name}, nil
+		return output{expr: cond.apply("count(" + ref + ")"), label: orLabel(m.Label, "Заполнено «"+name+"»"), column: col.Name}, nil
 	case FuncCountDistinct:
-		return output{expr: "count(DISTINCT " + ref + ")", label: orLabel(m.Label, "Уникальных «"+name+"»"), column: col.Name}, nil
+		return output{expr: cond.apply("count(DISTINCT " + ref + ")"), label: orLabel(m.Label, "Уникальных «"+name+"»"), column: col.Name}, nil
 	case FuncAvg:
 		switch {
 		case col.Type == domain.ColumnTypeBoolean:
-			return output{expr: "round(100.0 * avg(" + ref + "::int), 2)", label: orLabel(m.Label, "Доля «"+name+"», %"), column: col.Name}, nil
+			return output{expr: "round(100.0 * " + cond.apply("avg("+ref+"::int)") + ", 2)", label: orLabel(m.Label, "Доля «"+name+"», %"), column: col.Name}, nil
 		case col.Type.IsNumeric():
-			return output{expr: "round(avg(" + ref + ")::numeric, 2)", label: orLabel(m.Label, "Среднее «"+name+"»"), column: col.Name}, nil
+			return output{expr: "round(" + cond.apply("avg("+ref+")") + "::numeric, 2)", label: orLabel(m.Label, "Среднее «"+name+"»"), column: col.Name}, nil
 		}
 	case FuncSum:
 		if col.Type.IsNumeric() {
-			return output{expr: "sum(" + ref + ")", label: orLabel(m.Label, "Сумма «"+name+"»"), column: col.Name}, nil
+			return output{expr: cond.apply("sum(" + ref + ")"), label: orLabel(m.Label, "Сумма «"+name+"»"), column: col.Name}, nil
 		}
 	case FuncMedian, FuncP90:
 		if col.Type.IsNumeric() {
@@ -540,14 +698,18 @@ func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 				percentile, word = "0.9", "P90"
 			}
 			return output{
-				expr:  "percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + ref + ")",
+				expr:  cond.apply("percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + ref + ")"),
 				label: orLabel(m.Label, word+" «"+name+"»"), column: col.Name,
 			}, nil
+		}
+	case FuncStddev:
+		if col.Type.IsNumeric() {
+			return output{expr: "round(" + cond.apply("stddev_samp("+ref+")") + "::numeric, 2)", label: orLabel(m.Label, "Разброс «"+name+"»"), column: col.Name}, nil
 		}
 	case FuncMin, FuncMax:
 		if col.Type != domain.ColumnTypeBoolean {
 			word := map[Func]string{FuncMin: "Минимум", FuncMax: "Максимум"}[fn]
-			return output{expr: string(fn) + "(" + ref + ")", label: orLabel(m.Label, word+" «"+name+"»"), column: col.Name}, nil
+			return output{expr: cond.apply(string(fn) + "(" + ref + ")"), label: orLabel(m.Label, word+" «"+name+"»"), column: col.Name}, nil
 		}
 	default:
 		return output{}, invalid("неизвестная функция %q, допустимы: %s", m.Func, joinEnum(Funcs))
@@ -555,40 +717,97 @@ func (c *compiler) baseMetric(m Metric, grouped bool) (output, error) {
 	return output{}, invalid("функцию %s нельзя применить к колонке «%s» типа %s", fn, name, col.Type)
 }
 
-func (c *compiler) exprMetric(m Metric, fn Func, grouped bool) (output, error) {
+func (c *compiler) exprMetric(m Metric, fn Func, grouped bool, cond metricCond) (output, error) {
 	value, err := c.compileExpr(m.Expr, m.Scale)
 	if err != nil {
 		return output{}, err
 	}
-	return c.valueMetric(m, fn, grouped, value)
+	return c.valueMetric(m, fn, grouped, cond, value)
 }
 
-func (c *compiler) valueMetric(m Metric, fn Func, grouped bool, value string) (output, error) {
+// valueMetric — агрегат над вычисленным значением строки: формулой или
+// длительностью между двумя датами.
+func (c *compiler) valueMetric(m Metric, fn Func, grouped bool, cond metricCond, value string) (output, error) {
 	name := orLabel(m.Label, "Показатель")
 	switch fn {
 	case FuncCount:
 		if m.Duration != nil {
-			return output{expr: "count(" + value + ")", label: orLabel(m.Label, "Корректных интервалов")}, nil
+			name = orLabel(m.Label, "Корректных интервалов")
 		}
+		return output{expr: cond.apply("count(" + value + ")"), label: name}, nil
 	case FuncSum:
-		return output{expr: "round(sum(" + value + "), 2)", label: name}, nil
+		return output{expr: "round(" + cond.apply("sum("+value+")") + ", 2)", label: name}, nil
 	case FuncAvg:
-		return output{expr: "round(avg(" + value + "), 2)", label: name}, nil
+		return output{expr: "round(" + cond.apply("avg("+value+")") + ", 2)", label: name}, nil
 	case FuncMin, FuncMax:
-		return output{expr: "round(" + string(fn) + "(" + value + "), 2)", label: name}, nil
+		return output{expr: "round(" + cond.apply(string(fn)+"("+value+")") + ", 2)", label: name}, nil
 	case FuncMedian, FuncP90:
 		percentile := "0.5"
 		if fn == FuncP90 {
 			percentile = "0.9"
 		}
-		return output{expr: "percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + value + ")", label: name}, nil
+		return output{expr: cond.apply("percentile_cont(" + percentile + ") WITHIN GROUP (ORDER BY " + value + ")"), label: name}, nil
+	case FuncStddev:
+		return output{expr: "round(" + cond.apply("stddev_samp("+value+")") + ", 2)", label: name}, nil
 	case FuncShare:
+		if cond != "" {
+			known, err := c.knownCondition(m)
+			if err != nil {
+				return output{}, err
+			}
+			return output{expr: rateOf("sum("+value+")", cond, known), label: orLabel(m.Label, "Доля с условием, %")}, nil
+		}
 		if !grouped {
 			return output{}, invalid("доля считается только в разрезе: добавьте group_by или time")
 		}
 		return output{expr: c.shareOf(value), label: orLabel(m.Label, "Доля, %")}, nil
 	}
-	return output{}, invalid("к формуле применимы sum, avg, min, max, median, p90, share и count для duration, а не %q", m.Func)
+	return output{}, invalid("к формуле применимы sum, avg, min, max, median, p90, stddev, count и share, а не %q", m.Func)
+}
+
+// rateOf — доля внутри группы: какая часть агрегата приходится на строки
+// с условием. Знаменатель — строки, где условие определено (known): у посылки
+// без даты вручения опоздание неизвестно, и считать её «не опоздавшей»
+// значит занижать частоту — 7,9% вместо 8,5% у перевозчиков.
+func rateOf(aggregate string, cond, known metricCond) string {
+	return "round(100.0 * " + cond.apply(aggregate) + " / NULLIF(" + known.apply(aggregate) + ", 0), 2)"
+}
+
+// knownCondition — строки, где условие метрики определено: заполнены все
+// колонки и формулы, которые в нём сравниваются.
+func (c *compiler) knownCondition(m Metric) (metricCond, error) {
+	known := KnownFilters(m.Filters)
+	if len(known) == 0 {
+		return "", nil
+	}
+	conds, err := c.where(known)
+	if err != nil {
+		return "", err
+	}
+	return metricCond(strings.Join(conds, " AND ")), nil
+}
+
+// KnownFilters превращает условие события в условие «исход известен»:
+// для каждой сравниваемой колонки или формулы — not_null. Условия is_null
+// и not_null определены всегда и ничего не добавляют.
+func KnownFilters(filters []Filter) []Filter {
+	out := make([]Filter, 0, len(filters))
+	seen := make(map[string]bool, len(filters))
+	for _, f := range filters {
+		switch Op(strings.ToLower(strings.TrimSpace(string(f.Op)))) {
+		case OpIsNull, OpNotNull:
+			continue
+		}
+		known := Filter{Column: f.Column, Op: OpNotNull}
+		if strings.TrimSpace(f.Expr) != "" {
+			known = Filter{Expr: f.Expr, Op: OpNotNull}
+		}
+		if key := known.Column + "\x00" + known.Expr; !seen[key] {
+			seen[key] = true
+			out = append(out, known)
+		}
+	}
+	return out
 }
 
 func (c *compiler) shareOf(value string) string {
@@ -619,6 +838,9 @@ func (c *compiler) where(filters []Filter) ([]string, error) {
 }
 
 func (c *compiler) condition(f Filter) (string, error) {
+	if strings.TrimSpace(f.Expr) != "" {
+		return c.exprCondition(f)
+	}
 	bt, col, err := c.column(f.Column)
 	if err != nil {
 		return "", err
@@ -632,7 +854,21 @@ func (c *compiler) condition(f Filter) (string, error) {
 	case OpNotNull:
 		return ref + " IS NOT NULL", nil
 
-	case OpEq, OpNe, OpGt, OpGte, OpLt, OpLte:
+	case OpEq, OpNe, OpGt, OpLte:
+		if from, to, ok := temporalSpan(f.Value, col); ok {
+			switch op {
+			case OpEq:
+				return ref + " >= " + c.param(from) + " AND " + ref + " < " + c.param(to), nil
+			case OpNe:
+				return "(" + ref + " < " + c.param(from) + " OR " + ref + " >= " + c.param(to) + ")", nil
+			case OpGt:
+				return ref + " >= " + c.param(to), nil
+			case OpLte:
+				return ref + " < " + c.param(to), nil
+			}
+		}
+		fallthrough
+	case OpGte, OpLt:
 		if col.Type == domain.ColumnTypeBoolean && op != OpEq && op != OpNe {
 			return "", invalid("логическую колонку «%s» можно сравнивать только на равенство", title(col))
 		}
@@ -671,6 +907,9 @@ func (c *compiler) condition(f Filter) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if _, end, ok := temporalSpan(f.Values[1], col); ok {
+			return ref + " >= " + c.param(from) + " AND " + ref + " < " + c.param(end), nil
+		}
 		to, err := coerce(f.Values[1], col)
 		if err != nil {
 			return "", err
@@ -688,6 +927,48 @@ func (c *compiler) condition(f Filter) (string, error) {
 		return ref + " ILIKE " + c.param("%"+escapeLike(v.(string))+"%") + " ESCAPE '!'", nil
 	}
 	return "", invalid("неизвестный оператор %q, допустимы: %s", f.Op, joinEnum(Ops))
+}
+
+// exprCondition сравнивает формулу с числом: «Завершено» - «Срок» > 0 —
+// просроченные записи. Колонки и операции формулы проверяет тот же разбор, что у метрик.
+func (c *compiler) exprCondition(f Filter) (string, error) {
+	value, err := c.compileExpr(f.Expr, nil)
+	if err != nil {
+		return "", err
+	}
+	ref := "(" + value + ")"
+	number := domain.Column{Name: "формула", Type: domain.ColumnTypeNumeric}
+	switch op := Op(strings.ToLower(strings.TrimSpace(string(f.Op)))); op {
+	case OpIsNull:
+		return ref + " IS NULL", nil
+	case OpNotNull:
+		return ref + " IS NOT NULL", nil
+	case OpEq, OpNe, OpGt, OpGte, OpLt, OpLte:
+		if f.Value == nil {
+			return "", invalid("формулу сравнивают с числом в value; чтобы сравнить с другой колонкой, перенеси её в формулу: " +
+				"\"Закрыто\" - \"Создано\" - \"Норматив, ч\" с op gt и value 0")
+		}
+		v, err := coerce(f.Value, number)
+		if err != nil {
+			return "", err
+		}
+		sym := map[Op]string{OpEq: "=", OpNe: "<>", OpGt: ">", OpGte: ">=", OpLt: "<", OpLte: "<="}[op]
+		return ref + " " + sym + " " + c.param(v), nil
+	case OpBetween:
+		if len(f.Values) != 2 {
+			return "", invalid("для between нужны ровно два значения: начало и конец")
+		}
+		from, err := coerce(f.Values[0], number)
+		if err != nil {
+			return "", err
+		}
+		to, err := coerce(f.Values[1], number)
+		if err != nil {
+			return "", err
+		}
+		return ref + " BETWEEN " + c.param(from) + " AND " + c.param(to), nil
+	}
+	return "", invalid("формулу можно сравнивать с числом (eq, ne, gt, gte, lt, lte, between) или проверять на пустоту, а не %q", f.Op)
 }
 
 func (c *compiler) param(v any) string {
@@ -742,6 +1023,9 @@ func orderBy(s *Sort, outs []output, hasTime bool) (string, error) {
 	by := strings.TrimSpace(s.By)
 	for i, o := range outs {
 		if strings.EqualFold(o.label, by) || (o.column != "" && strings.EqualFold(o.column, by)) {
+			if o.sortExpr != "" {
+				return o.sortExpr + direction(s.Desc), nil
+			}
 			return strconv.Itoa(i+1) + direction(s.Desc), nil
 		}
 	}
